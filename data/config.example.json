@@ -4,6 +4,13 @@
     "port": 8787
   },
   "active": "example",
+  "activeModel": "deepseek-v4.1-flash",
+  "modelPolicy": "fixed",
+  "logs": {
+    "enabled": true,
+    "maxSizeKB": 2048,
+    "keep": 3
+  },
   "providers": [
     {
       "id": "example",

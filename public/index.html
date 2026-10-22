@@ -7,59 +7,68 @@
 <style>
   /* ---------- tokens ---------- */
   :root {
-    --bg: #0b0d12;
-    --bg-grad: radial-gradient(1200px 500px at 15% -10%, rgba(91,140,255,.10), transparent 60%),
-               radial-gradient(900px 420px at 95% 0%, rgba(139,108,255,.08), transparent 55%);
-    --panel: #13161d;
-    --panel-2: #171b24;
-    --panel-3: #1c212b;
-    --line: #242a35;
-    --line-soft: #1d222b;
-    --text: #e9ecf2;
-    --muted: #8a93a4;
-    --dim: #626b7c;
-    --accent: #5b8cff;
-    --accent-soft: rgba(91,140,255,.14);
-    --ok: #35c48a;
-    --ok-soft: rgba(53,196,138,.13);
-    --warn: #e8a33d;
-    --warn-soft: rgba(232,163,61,.13);
-    --err: #f0655d;
-    --err-soft: rgba(240,101,93,.13);
-    --radius: 12px;
-    --radius-sm: 8px;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
-    --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --bg: #0a0b0e;
+    --bg-glow: radial-gradient(760px 320px at 50% -160px, rgba(127,156,255,.13), transparent 70%);
+    --panel: #101219;
+    --panel-2: #14171f;
+    --panel-3: #191d26;
+    --line: #20242e;
+    --line-soft: #191d25;
+    --text: #e7eaf1;
+    --text-2: #a9b1c1;
+    --muted: #7e8798;
+    --dim: #5c6473;
+    --accent: #7f9cff;
+    --accent-deep: #5d7cf2;
+    --accent-soft: rgba(127,156,255,.12);
+    --btn-fg: #0a0b0e;
+    --ok: #3fcf8e;
+    --ok-soft: rgba(63,207,142,.12);
+    --warn: #e9b160;
+    --warn-soft: rgba(233,177,96,.12);
+    --err: #f2746b;
+    --err-soft: rgba(242,116,107,.13);
+    --r: 14px;
+    --r-sm: 10px;
+    --r-xs: 7px;
+    --shadow: 0 12px 32px -22px rgba(0,0,0,.9);
+    --mono: "Cascadia Code", "JetBrains Mono", Consolas, "SFMono-Regular", monospace;
   }
   html[data-theme="light"] {
-    --bg: #f5f6f9;
-    --bg-grad: radial-gradient(1200px 500px at 15% -10%, rgba(91,140,255,.10), transparent 60%),
-               radial-gradient(900px 420px at 95% 0%, rgba(139,108,255,.07), transparent 55%);
+    --bg: #f6f7fa;
+    --bg-glow: radial-gradient(760px 320px at 50% -160px, rgba(93,124,242,.10), transparent 70%);
     --panel: #ffffff;
-    --panel-2: #f4f6fa;
-    --panel-3: #eceff5;
-    --line: #e2e7ef;
+    --panel-2: #f7f8fb;
+    --panel-3: #eef1f6;
+    --line: #e3e7ef;
     --line-soft: #edf0f5;
-    --text: #171a20;
-    --muted: #5f6879;
-    --dim: #868f9f;
-    --accent: #2f6bff;
-    --accent-soft: rgba(47,107,255,.10);
-    --ok: #0d9b6c;
-    --ok-soft: rgba(13,155,108,.10);
-    --warn: #b3760f;
-    --warn-soft: rgba(179,118,15,.10);
-    --err: #d63a30;
-    --err-soft: rgba(214,58,48,.09);
-    --shadow: 0 1px 2px rgba(20,25,40,.06), 0 10px 28px -18px rgba(20,25,40,.28);
+    --text: #14161c;
+    --text-2: #4e576a;
+    --muted: #6a7383;
+    --dim: #8d95a4;
+    --accent: #3a63e8;
+    --accent-deep: #2d50c9;
+    --accent-soft: rgba(58,99,232,.09);
+    --btn-fg: #ffffff;
+    --ok: #0b9a67;
+    --ok-soft: rgba(11,154,103,.10);
+    --warn: #a86f12;
+    --warn-soft: rgba(168,111,18,.10);
+    --err: #d13f34;
+    --err-soft: rgba(209,63,52,.09);
+    --shadow: 0 10px 26px -22px rgba(20,25,40,.5);
   }
 
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
-    margin: 0; background: var(--bg); background-image: var(--bg-grad); color: var(--text);
+    margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.55 "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0 0 auto; height: 340px;
+    background: var(--bg-glow); pointer-events: none; z-index: 0;
   }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -67,297 +76,391 @@
   ::selection { background: var(--accent-soft); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-thumb { background: var(--panel-3); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--panel-3); border-radius: 8px; border: 2px solid transparent; background-clip: content-box;
+  }
   ::-webkit-scrollbar-thumb:hover { background: var(--line); background-clip: content-box; }
   ::-webkit-scrollbar-track { background: transparent; }
 
   /* ---------- topbar ---------- */
   .topbar {
     position: sticky; top: 0; z-index: 30;
-    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    padding: 12px 22px; border-bottom: 1px solid var(--line);
-    background: color-mix(in srgb, var(--bg) 82%, transparent);
-    backdrop-filter: blur(12px) saturate(140%);
+    display: flex; align-items: center; gap: 12px;
+    height: 58px; padding: 0 22px; border-bottom: 1px solid var(--line-soft);
+    background: color-mix(in srgb, var(--bg) 76%, transparent);
+    backdrop-filter: blur(14px) saturate(160%);
   }
-  .brand { display: flex; align-items: center; gap: 11px; }
-  .logo {
-    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
-    background: linear-gradient(135deg, #5b8cff, #8b6cff); color: #fff;
-    font-weight: 700; font-size: 13px; letter-spacing: .3px;
-    box-shadow: 0 4px 14px -6px rgba(91,140,255,.9);
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .mark {
+    width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center;
+    background: linear-gradient(150deg, var(--accent), var(--accent-deep));
+    color: #fff; font-size: 11px; font-weight: 800; letter-spacing: .4px;
+    box-shadow: 0 4px 14px -8px var(--accent);
   }
-  .brand h1 { font-size: 15.5px; font-weight: 650; margin: 0; letter-spacing: .1px; }
-  .brand .sub { color: var(--dim); font-size: 11.5px; margin-top: 1px; letter-spacing: .2px; }
+  .brand h1 { font-size: 14px; font-weight: 620; margin: 0; letter-spacing: .1px; white-space: nowrap; }
+  .brand .ver {
+    font-family: var(--mono); font-size: 10.5px; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; margin-left: 2px;
+  }
   .grow { flex: 1; }
 
-  .chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px;
-    border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
-    font-size: 12.5px; color: var(--muted); white-space: nowrap;
-  }
-  .chip.strong { color: var(--text); }
-  .chip b { font-weight: 600; color: var(--text); }
+  .top-right { display: flex; align-items: center; gap: 8px; }
+  .status { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: none; }
   .dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
   .dot.off { background: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
-  .dot.wait { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
-  .dot.pulse { animation: pulse 1.6s ease-in-out infinite; }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .dot.wait { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 
-  /* ---------- layout ---------- */
-  .shell { max-width: 1200px; margin: 0 auto; padding: 18px 22px 8px; }
-  .grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
-  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-  @media (max-width: 940px) {
-    .grid { grid-template-columns: minmax(0, 1fr); }
-    .topbar { padding: 10px 14px; }
-    .shell { padding: 14px 14px 8px; }
+  .model-pill {
+    display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
+    color: var(--text); font-size: 12.5px; font-family: var(--mono); cursor: pointer;
+    max-width: 260px; white-space: nowrap; transition: border-color .14s, background .14s;
+  }
+  .model-pill:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); background: var(--panel-2); }
+  .model-pill .lbl { color: var(--dim); font-family: inherit; font-size: 11.5px; }
+  .model-pill .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .model-pill .mode {
+    font-family: inherit; font-size: 10px; padding: 0 5px; border-radius: 4px;
+    background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
   }
 
+  .icon-btn {
+    width: 30px; height: 30px; display: grid; place-items: center; padding: 0;
+    background: transparent; border: 1px solid transparent; border-radius: var(--r-xs);
+    color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; transition: all .13s;
+  }
+  .icon-btn:hover { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+  .icon-btn.danger:hover { color: var(--err); background: var(--err-soft); border-color: color-mix(in srgb, var(--err) 28%, transparent); }
+
+  /* ---------- layout ---------- */
+  .shell { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 18px 22px 0; }
+  .grid { display: grid; grid-template-columns: 286px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  @media (max-width: 980px) {
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    .topbar { padding: 0 14px; height: 54px; }
+    .shell { padding: 14px 14px 0; }
+    .brand .ver { display: none; }
+    .model-pill { max-width: 130px; }
+    .model-pill .lbl { display: none; }
+  }
+  @media (max-width: 640px) {
+    .card-head { flex-wrap: wrap; padding: 8px 14px; row-gap: 6px; }
+    .card-head .seg { order: 9; }
+    .card-head .hint { display: none; }
+    .topbar { gap: 8px; }
+    .status #statusText { display: none; }
+    .model-pill { max-width: 108px; padding: 0 8px; gap: 5px; }
+    .model-pill .val { max-width: 62px; }
+  }
+
+  /* ---------- card + collapse ---------- */
   .card {
-    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
     box-shadow: var(--shadow); overflow: hidden;
   }
   .card-head {
-    display: flex; align-items: center; gap: 9px; padding: 12px 14px;
-    border-bottom: 1px solid var(--line-soft); background: linear-gradient(var(--panel), var(--panel));
+    display: flex; align-items: center; gap: 9px; padding: 0 14px;
+    min-height: 46px; user-select: none;
   }
+  .card-head.clickable { cursor: pointer; }
+  .card-head.clickable:hover { background: var(--panel-2); }
   .card-head h2 {
-    font-size: 12px; font-weight: 650; letter-spacing: .7px; text-transform: uppercase;
-    color: var(--muted); margin: 0;
+    font-size: 12.5px; font-weight: 620; letter-spacing: .2px; color: var(--text); margin: 0;
+    display: inline-flex; align-items: center; gap: 7px;
   }
-  .card-head .count {
-    font-size: 11px; color: var(--muted); background: var(--panel-3); border-radius: 999px;
-    padding: 1px 7px; font-family: var(--mono);
+  .card-head .cnt {
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    background: var(--panel-3); border-radius: 5px; padding: 1px 6px;
   }
-  .card-body { padding: 14px; }
-  .card-foot {
-    padding: 10px 12px; border-top: 1px solid var(--line-soft); background: var(--panel-2);
-    display: flex; gap: 8px; align-items: center;
+  .chev {
+    width: 18px; height: 18px; display: grid; place-items: center; flex: none;
+    color: var(--dim); transition: transform .16s ease; font-size: 11px;
   }
+  .card.collapsed .chev { transform: rotate(-90deg); }
+  .card.collapsed .card-body { display: none; }
+  .card-body { border-top: 1px solid var(--line-soft); }
+  .card-body.flush { padding: 0; }
+  .card-body.pad { padding: 14px; }
 
-  /* ---------- providers list ---------- */
-  .prov-list { list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+  /* ---------- providers ---------- */
+  .prov-tools { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); }
+  .prov-list {
+    list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 1px;
+    max-height: min(56vh, 520px); overflow-y: auto;
+  }
   .prov {
-    display: flex; align-items: center; gap: 10px; padding: 10px 10px; border-radius: 9px;
-    cursor: pointer; border: 1px solid transparent; transition: background .12s, border-color .12s;
+    border-radius: var(--r-xs); border: 1px solid transparent; transition: background .12s, border-color .12s;
   }
   .prov:hover { background: var(--panel-2); }
-  .prov.sel { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
+  .prov.sel { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .prov-row {
+    display: flex; align-items: center; gap: 9px; padding: 8px 9px; cursor: pointer;
+  }
   .prov .pstatus { width: 6px; height: 6px; border-radius: 50%; background: var(--line); flex: none; }
   .prov .pstatus.ok { background: var(--ok); }
   .prov .pstatus.err { background: var(--err); }
   .prov .pstatus.load { background: var(--warn); animation: pulse 1.2s infinite; }
   .prov .info { flex: 1; min-width: 0; }
-  .prov .nm { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13.5px; }
-  .prov .nm span.t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .prov .mt { color: var(--dim); font-size: 11.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tag {
-    font-size: 10px; font-weight: 700; letter-spacing: .4px; padding: 1.5px 6px; border-radius: 5px;
-    border: 1px solid var(--line); color: var(--muted); flex: none; text-transform: uppercase;
+  .prov .nm { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 560; }
+  .prov .nm .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prov .mt {
+    color: var(--dim); font-size: 11px; margin-top: 1px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono);
   }
-  .tag.cur { border-color: color-mix(in srgb, var(--ok) 40%, transparent); color: var(--ok); background: var(--ok-soft); }
+  .tag {
+    font-size: 9.5px; font-weight: 700; letter-spacing: .3px; padding: 1px 5px; border-radius: 4px;
+    border: 1px solid var(--line); color: var(--muted); flex: none;
+  }
+  .tag.cur { border-color: color-mix(in srgb, var(--ok) 42%, transparent); color: var(--ok); background: var(--ok-soft); }
   .tag.warn { border-color: color-mix(in srgb, var(--warn) 42%, transparent); color: var(--warn); background: var(--warn-soft); }
-  .tag.api-o { color: #8fb5ff; border-color: rgba(91,140,255,.32); background: var(--accent-soft); }
-  .tag.api-a { color: #c9a6ff; border-color: rgba(139,108,255,.34); background: rgba(139,108,255,.12); }
+  .tag.o { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 26%, transparent); background: var(--accent-soft); }
+  .tag.a { color: #b79cff; border-color: rgba(150,120,255,.28); background: rgba(150,120,255,.11); }
+
+  .prov-more {
+    width: 22px; height: 22px; display: grid; place-items: center; flex: none;
+    border: 0; background: transparent; color: var(--dim); cursor: pointer; border-radius: 5px;
+    font-size: 10px; transition: transform .16s, color .12s, background .12s;
+  }
+  .prov-more:hover { color: var(--text); background: var(--panel-3); }
+  .prov.open .prov-more { transform: rotate(90deg); }
+  .prov-models { display: none; padding: 0 9px 9px 24px; }
+  .prov.open .prov-models { display: flex; flex-wrap: wrap; gap: 4px; }
+  .mchip {
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    background: var(--panel-3); border: 1px solid var(--line-soft); border-radius: 4px; padding: 1px 5px;
+  }
+  .mchip.cur { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 
   .empty {
-    margin: 10px; padding: 22px 14px; text-align: center; color: var(--dim); font-size: 12.5px;
-    border: 1px dashed var(--line); border-radius: var(--radius-sm); line-height: 1.7;
+    margin: 8px; padding: 22px 14px; text-align: center; color: var(--dim); font-size: 12px;
+    border: 1px dashed var(--line); border-radius: var(--r-sm); line-height: 1.75;
+  }
+  .card-foot {
+    padding: 9px 12px; border-top: 1px solid var(--line-soft); background: var(--panel-2);
+    display: flex; gap: 8px; align-items: center;
   }
 
-  /* ---------- route panel ---------- */
-  .route { border-color: color-mix(in srgb, var(--accent) 32%, var(--line)); }
-  .route .card-head { background: linear-gradient(90deg, var(--accent-soft), transparent 55%); }
-  .route-body { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  /* ---------- route ---------- */
+  .route-body { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 14px; }
   .route-select {
-    flex: 0 1 380px; min-width: 220px; height: 40px; font-family: var(--mono); font-size: 13px;
-    font-weight: 500; padding: 0 12px;
+    flex: 1 1 220px; min-width: 0; max-width: 380px; height: 38px; font-family: var(--mono); font-size: 12.5px;
+    font-weight: 500; padding: 0 10px; text-overflow: ellipsis;
   }
-  .route-meta { flex: 1 1 260px; color: var(--muted); font-size: 12.5px; line-height: 1.7; min-width: 0; }
+  .route-meta { flex: 1 1 240px; color: var(--muted); font-size: 12px; line-height: 1.65; min-width: 0; overflow-wrap: anywhere; }
   .route-meta b { color: var(--text); font-family: var(--mono); font-weight: 600; }
   .route-meta .warn-t { color: var(--warn); }
 
   /* ---------- form ---------- */
-  .section { padding: 14px; border-bottom: 1px solid var(--line-soft); }
-  .section:last-of-type { border-bottom: none; }
-  .section-title {
-    font-size: 11px; font-weight: 650; letter-spacing: .6px; text-transform: uppercase;
-    color: var(--dim); margin: 0 0 11px; display: flex; align-items: center; gap: 8px;
+  .sec { border-bottom: 1px solid var(--line-soft); }
+  .sec:last-child { border-bottom: none; }
+  .sec-head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px 8px;
+    cursor: pointer; user-select: none;
   }
-  .section-title::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+  .sec-head:hover .sec-title { color: var(--text-2); }
+  .sec-title {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase;
+    color: var(--dim); margin: 0; display: flex; align-items: center; gap: 6px; transition: color .12s;
+  }
+  .sec-body { padding: 0 14px 14px; }
+  .sec.collapsed .sec-body { display: none; }
+  .sec.collapsed .chev { transform: rotate(-90deg); }
 
-  label.f { display: block; font-size: 12px; color: var(--muted); margin: 0 0 5px; }
-  label.f .opt { color: var(--dim); font-weight: 400; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-bottom: 11px; }
+  label.f { display: block; font-size: 11.5px; color: var(--muted); margin: 0 0 5px; }
+  label.f .opt { color: var(--dim); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
   .row:last-child { margin-bottom: 0; }
   .row.one { grid-template-columns: 1fr; }
-  @media (max-width: 620px) { .row { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
 
   input, select, textarea {
     width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
-    border-radius: var(--radius-sm); padding: 9px 11px; font-size: 13px; outline: none;
+    border-radius: var(--r-xs); padding: 8px 10px; font-size: 13px; outline: none;
     font-family: inherit; transition: border-color .12s, background .12s, box-shadow .12s;
   }
   input::placeholder, textarea::placeholder { color: var(--dim); }
-  input:hover, select:hover { border-color: color-mix(in srgb, var(--line) 60%, var(--muted)); }
+  input:hover, select:hover { border-color: color-mix(in srgb, var(--line) 55%, var(--muted)); }
   input:focus, select:focus, textarea:focus {
     border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--panel);
   }
   input:disabled { color: var(--dim); cursor: not-allowed; background: var(--panel-3); }
   input.mono, textarea.mono { font-family: var(--mono); font-size: 12.5px; }
+  select { appearance: none; background-image: none; cursor: pointer; }
 
   /* ---------- model rows ---------- */
-  .models { display: flex; flex-direction: column; gap: 7px; }
-  .mrow {
-    display: grid; grid-template-columns: minmax(0,1.35fr) minmax(0,1fr) 96px 30px; gap: 7px; align-items: center;
+  .models {
+    display: flex; flex-direction: column; gap: 6px;
   }
-  .mrow input { padding: 7px 9px; font-size: 12.5px; font-family: var(--mono); }
+  .models.scroll { max-height: 340px; overflow-y: auto; padding-right: 4px; }
+  .mrow { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr) 92px 26px; gap: 6px; align-items: center; }
+  .mrow input { padding: 6px 8px; font-size: 12px; font-family: var(--mono); }
   .mrow input.mname { font-family: inherit; }
-  @media (max-width: 620px) { .mrow { grid-template-columns: minmax(0,1fr) 30px; } .mrow input.mname, .mrow input.mctx { display: none; } }
-
-  .icon-btn {
-    width: 30px; height: 30px; display: grid; place-items: center; padding: 0;
-    background: transparent; border: 1px solid transparent; border-radius: 7px; color: var(--dim);
-    cursor: pointer; font-size: 13px; transition: all .12s;
+  @media (max-width: 640px) {
+    .mrow { grid-template-columns: minmax(0,1fr) 26px; }
+    .mrow input.mname, .mrow input.mctx { display: none; }
   }
-  .icon-btn:hover { color: var(--err); background: var(--err-soft); border-color: color-mix(in srgb, var(--err) 30%, transparent); }
-
   .add-model {
-    margin-top: 8px; width: 100%; padding: 8px; border-radius: var(--radius-sm);
+    margin-top: 7px; width: 100%; padding: 7px; border-radius: var(--r-xs);
     border: 1px dashed var(--line); background: transparent; color: var(--muted);
-    font-size: 12.5px; cursor: pointer; transition: all .12s;
+    font-size: 12px; cursor: pointer; transition: all .12s; font-family: inherit;
   }
   .add-model:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
   /* ---------- buttons ---------- */
   .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-    height: 34px; padding: 0 14px; border-radius: var(--radius-sm); border: 1px solid transparent;
-    font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
-    background: var(--accent); color: #fff; transition: filter .12s, background .12s, border-color .12s, opacity .12s;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 32px; padding: 0 13px; border-radius: var(--r-xs); border: 1px solid transparent;
+    font-size: 12.5px; font-weight: 560; font-family: inherit; cursor: pointer;
+    background: var(--accent); color: var(--btn-fg); transition: filter .12s, background .12s, border-color .12s, opacity .12s;
     white-space: nowrap;
   }
-  .btn:hover { filter: brightness(1.08); }
-  .btn:active { transform: translateY(.5px); }
+  .btn:hover { filter: brightness(1.07); }
   .btn.ghost { background: var(--panel-2); border-color: var(--line); color: var(--text); font-weight: 500; }
   .btn.ghost:hover { background: var(--panel-3); filter: none; }
   .btn.subtle { background: transparent; border-color: var(--line); color: var(--muted); font-weight: 500; }
   .btn.subtle:hover { color: var(--text); background: var(--panel-2); }
-  .btn.danger { background: transparent; border-color: color-mix(in srgb, var(--err) 40%, transparent); color: var(--err); font-weight: 500; }
+  .btn.danger { background: transparent; border-color: color-mix(in srgb, var(--err) 32%, var(--line)); color: var(--err); font-weight: 500; }
   .btn.danger:hover { background: var(--err-soft); }
-  .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 7px; }
+  .btn.sm { height: 27px; padding: 0 9px; font-size: 11.5px; border-radius: 6px; }
   .btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
   .btn .spin {
-    width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor;
+    width: 11px; height: 11px; border-radius: 50%; border: 2px solid currentColor;
     border-top-color: transparent; animation: spin .7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px; background: var(--panel-2); border-top: 1px solid var(--line-soft); align-items: center; }
+  .actions {
+    display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 14px; background: var(--panel-2);
+    border-top: 1px solid var(--line-soft); align-items: center;
+  }
 
-  .hint { color: var(--dim); font-size: 12px; line-height: 1.65; }
-  .hint code, .hint .mono { color: var(--muted); background: var(--panel-3); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
-  .result { margin-left: auto; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .hint { color: var(--dim); font-size: 11.5px; line-height: 1.65; }
+  .hint code, .hint .mono { color: var(--muted); background: var(--panel-3); padding: 1px 4px; border-radius: 4px; font-size: 11px; }
+  .result { margin-left: auto; font-size: 11.5px; display: inline-flex; align-items: center; gap: 5px; }
   .result.ok { color: var(--ok); }
   .result.err { color: var(--err); }
   .result .ico { font-weight: 700; }
 
   /* ---------- snippets ---------- */
-  .tabs { display: flex; gap: 4px; padding: 10px 12px 0; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 2px; padding: 10px 12px 0; flex-wrap: wrap; }
   .tab {
-    padding: 6px 11px; border-radius: 8px 8px 0 0; font-size: 12.5px; color: var(--muted);
-    background: transparent; border: 1px solid transparent; border-bottom: none; cursor: pointer; font-family: inherit;
+    padding: 5px 10px; border-radius: 6px; font-size: 12px; color: var(--muted);
+    background: transparent; border: 1px solid transparent; cursor: pointer; font-family: inherit;
   }
   .tab:hover { color: var(--text); background: var(--panel-2); }
-  .tab.on { color: var(--text); background: var(--panel-2); border-color: var(--line); position: relative; top: 1px; font-weight: 600; }
-  .snip-wrap { position: relative; padding: 0 12px 12px; }
+  .tab.on { color: var(--text); background: var(--panel-3); border-color: var(--line); font-weight: 560; }
+  .snip-wrap { position: relative; padding: 8px 12px 12px; }
   pre.snip {
-    margin: 0; padding: 13px 14px; background: var(--panel-2); border: 1px solid var(--line);
-    border-radius: 0 8px 8px 8px; overflow: auto; font-family: var(--mono); font-size: 12px; line-height: 1.7;
-    color: color-mix(in srgb, var(--text) 88%, var(--muted)); white-space: pre;
+    margin: 0; padding: 12px 13px; background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); overflow: auto; font-family: var(--mono); font-size: 11.5px; line-height: 1.75;
+    color: color-mix(in srgb, var(--text) 86%, var(--muted)); white-space: pre;
   }
   .copy {
-    position: absolute; top: 9px; right: 20px; height: 26px; padding: 0 9px; font-size: 11.5px;
-    border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+    position: absolute; top: 15px; right: 20px; height: 24px; padding: 0 8px; font-size: 11px;
+    border-radius: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--muted);
     cursor: pointer; font-family: inherit; opacity: 0; transition: opacity .14s, color .12s;
   }
   .snip-wrap:hover .copy, .copy:focus-visible { opacity: 1; }
   .copy:hover { color: var(--text); }
 
   /* ---------- logs ---------- */
-  .logs-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
-  .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 2px; gap: 2px; }
+  .logs-toolbar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--line-soft); flex-wrap: wrap;
+  }
+  .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 2px; gap: 2px; }
   .seg button {
-    height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent;
-    color: var(--muted); font-size: 12px; cursor: pointer; font-family: inherit;
+    height: 22px; padding: 0 9px; border: 0; border-radius: 5px; background: transparent;
+    color: var(--muted); font-size: 11.5px; cursor: pointer; font-family: inherit;
   }
   .seg button.on { background: var(--panel-3); color: var(--text); font-weight: 600; }
-  .switch { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+  .switch { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); cursor: pointer; user-select: none; }
   .switch input { display: none; }
-  .track { width: 30px; height: 17px; border-radius: 999px; background: var(--panel-3); border: 1px solid var(--line); position: relative; transition: background .15s; }
-  .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--dim); transition: all .15s; }
-  .switch input:checked + .track { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-  .switch input:checked + .track::after { left: 15px; background: var(--accent); }
+  .track { width: 28px; height: 16px; border-radius: 999px; background: var(--panel-3); border: 1px solid var(--line); position: relative; transition: background .15s; }
+  .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--dim); transition: all .15s; }
+  .switch input:checked + .track { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+  .switch input:checked + .track::after { left: 14px; background: var(--accent); }
 
-  .tbl-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 620px; }
-  th {
-    text-align: left; color: var(--dim); font-weight: 600; padding: 8px 12px; font-size: 11px;
-    letter-spacing: .5px; text-transform: uppercase; border-bottom: 1px solid var(--line-soft);
-    background: var(--panel); position: sticky; top: 0;
+  .log-size {
+    font-family: var(--mono); font-size: 11px; color: var(--dim);
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
   }
-  td { padding: 8px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+  .log-size .bar { width: 46px; height: 3px; border-radius: 2px; background: var(--panel-3); overflow: hidden; }
+  .log-size .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+  .log-size .bar i.warn { background: var(--warn); }
+
+  .tbl-wrap { overflow-x: auto; max-height: 460px; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 600px; }
+  th {
+    text-align: left; color: var(--dim); font-weight: 650; padding: 8px 12px; font-size: 10px;
+    letter-spacing: .6px; text-transform: uppercase; border-bottom: 1px solid var(--line-soft);
+    background: var(--panel); position: sticky; top: 0; z-index: 1;
+  }
+  td { padding: 7px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
   tbody tr:last-child td { border-bottom: none; }
   tbody tr:hover td { background: var(--panel-2); }
   td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .st {
-    display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 12px; font-weight: 600;
-    padding: 1px 7px; border-radius: 6px;
+    display: inline-flex; align-items: center; font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+    padding: 1px 6px; border-radius: 5px;
   }
   .st.ok { color: var(--ok); background: var(--ok-soft); }
   .st.warn { color: var(--warn); background: var(--warn-soft); }
   .st.err { color: var(--err); background: var(--err-soft); }
   .st.none { color: var(--dim); background: var(--panel-3); }
-  .prov-chip { font-size: 11.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line-soft); padding: 1px 7px; border-radius: 5px; }
-  .bars { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
-  .bar { height: 4px; border-radius: 3px; background: var(--accent); opacity: .55; min-width: 2px; max-width: 54px; }
+  .prov-chip { font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line-soft); padding: 1px 6px; border-radius: 4px; }
+  .bars { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .bar-fill { height: 3px; border-radius: 2px; background: var(--accent); opacity: .5; min-width: 2px; max-width: 48px; }
+
+  .log-policy { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); background: var(--panel-2); display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+  .log-policy[hidden] { display: none; }
+  .log-policy .fld { display: flex; flex-direction: column; gap: 4px; }
+  .log-policy .fld span { font-size: 10.5px; color: var(--dim); letter-spacing: .3px; }
+  .log-policy select { height: 28px; padding: 0 8px; font-size: 12px; width: auto; min-width: 88px; }
+  .log-files { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .file-link {
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 5px; padding: 2px 6px; background: var(--panel);
+  }
+  .file-link:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); text-decoration: none; }
 
   /* ---------- toast / modal ---------- */
   #toasts { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }
   .toast {
-    display: flex; align-items: flex-start; gap: 9px; min-width: 220px; max-width: 400px;
-    padding: 11px 13px; border-radius: 10px; background: var(--panel-3); border: 1px solid var(--line);
-    box-shadow: var(--shadow); font-size: 13px; animation: tin .18s ease-out;
+    display: flex; align-items: flex-start; gap: 9px; min-width: 200px; max-width: 380px;
+    padding: 10px 12px; border-radius: var(--r-sm); background: var(--panel-3); border: 1px solid var(--line);
+    box-shadow: 0 18px 40px -24px rgba(0,0,0,.9); font-size: 12.5px; animation: tin .18s ease-out;
   }
   @keyframes tin { from { opacity: 0; transform: translateY(8px) scale(.98); } }
-  .toast .ico { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; flex: none; margin-top: 1px; }
-  .toast.ok { border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .toast .ico { width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center; font-size: 9.5px; font-weight: 700; flex: none; margin-top: 1px; }
+  .toast.ok { border-color: color-mix(in srgb, var(--ok) 36%, transparent); }
   .toast.ok .ico { background: var(--ok-soft); color: var(--ok); }
-  .toast.err { border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+  .toast.err { border-color: color-mix(in srgb, var(--err) 36%, transparent); }
   .toast.err .ico { background: var(--err-soft); color: var(--err); }
   .toast.info .ico { background: var(--accent-soft); color: var(--accent); }
 
   .backdrop {
-    position: fixed; inset: 0; background: rgba(6,8,12,.62); backdrop-filter: blur(3px);
+    position: fixed; inset: 0; background: rgba(4,6,10,.66); backdrop-filter: blur(3px);
     display: grid; place-items: center; z-index: 70; padding: 20px; animation: tin .14s ease-out;
   }
   .backdrop[hidden] { display: none; }
   .modal {
-    width: 100%; max-width: 400px; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 14px; box-shadow: 0 24px 60px -20px rgba(0,0,0,.7); overflow: hidden;
+    width: 100%; max-width: 390px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--r); box-shadow: 0 28px 70px -26px rgba(0,0,0,.85); overflow: hidden;
   }
   .modal .m-body { padding: 18px 18px 6px; }
-  .modal h3 { margin: 0 0 7px; font-size: 15px; font-weight: 650; }
-  .modal p { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.6; }
-  .modal .m-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
+  .modal h3 { margin: 0 0 6px; font-size: 14.5px; font-weight: 620; }
+  .modal p { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+  .modal .m-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; }
 
   .page-foot {
-    max-width: 1200px; margin: 0 auto; padding: 16px 22px 34px; display: flex; gap: 14px;
-    align-items: center; flex-wrap: wrap; color: var(--dim); font-size: 12px;
+    position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 14px 22px 30px;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap; color: var(--dim); font-size: 11.5px;
   }
   kbd {
-    font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius: 4px;
+    font-family: var(--mono); font-size: 10.5px; padding: 1px 5px; border-radius: 4px;
     border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
   }
 </style>
@@ -366,48 +469,56 @@
 
 <header class="topbar">
   <div class="brand">
-    <div class="logo">LG</div>
-    <div>
-      <h1>LLM Gateway</h1>
-      <div class="sub">本地统一入口 · 多模型自由切换</div>
-    </div>
+    <div class="mark">LG</div>
+    <h1>LLM Gateway</h1>
+    <span class="ver" id="verChip">v1.3</span>
   </div>
   <div class="grow"></div>
-  <div class="chips">
-    <span class="chip"><span class="dot wait pulse" id="dot"></span><span id="statusText">连接中…</span></span>
-    <button class="chip strong mono" id="endpoint" title="点击复制地址">127.0.0.1:8787</button>
-    <span class="chip" id="chipActive" title="当前 provider">当前 <b>—</b></span>
-    <span class="chip" title="聚合模型数">模型 <b id="chipModels">0</b></span>
-    <button class="chip" id="btnTheme" title="切换主题" aria-label="切换主题">◐</button>
+  <div class="top-right">
+    <span class="status"><span class="dot wait" id="dot"></span><span id="statusText">连接中…</span></span>
+    <button class="model-pill" id="modelPill" title="点击调整当前调用模型">
+      <span class="lbl">模型</span>
+      <span class="val" id="pillModel">—</span>
+      <span class="mode" id="pillMode">固定</span>
+    </button>
+    <button class="icon-btn" id="btnCollapseAll" title="折叠 / 展开全部卡片">⌃</button>
+    <button class="icon-btn" id="btnTheme" title="切换主题">◐</button>
   </div>
 </header>
 
 <div class="shell">
   <div class="grid">
+
     <!-- 左：provider 列表 -->
     <div class="col">
-      <div class="card">
+      <div class="card" id="cardProv">
         <div class="card-head">
-          <h2>Providers</h2>
-          <span class="count" id="provCount">0</span>
+          <h2>供应商 <span class="cnt" id="provCount">0</span></h2>
           <div class="grow"></div>
-          <button class="btn ghost sm" id="btnNew">+ 新增</button>
+          <button class="btn ghost sm" id="btnNew">新增</button>
         </div>
-        <ul class="prov-list" id="list">
-          <li class="empty">加载中…</li>
-        </ul>
-        <div class="card-foot">
-          <button class="btn subtle sm" id="btnTestAll">全部测活</button>
-          <div class="grow"></div>
-          <span class="hint" id="testAllHint"></span>
+        <div class="card-body flush">
+          <div class="prov-tools" id="provTools" hidden>
+            <input id="provFilter" placeholder="搜索供应商或模型…" autocomplete="off" style="height:30px;font-size:12px" />
+          </div>
+          <ul class="prov-list" id="list">
+            <li class="empty">加载中…</li>
+          </ul>
+          <div class="card-foot">
+            <button class="btn subtle sm" id="btnTestAll">全部测活</button>
+            <div class="grow"></div>
+            <span class="hint" id="testAllHint"></span>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- 右：当前调用 + 编辑 + 接入 -->
     <div class="col">
-      <div class="card route">
-        <div class="card-head">
+
+      <div class="card" id="cardRoute" data-cid="route">
+        <div class="card-head clickable" data-toggle="route">
+          <span class="chev">▾</span>
           <h2>当前调用模型</h2>
           <div class="grow"></div>
           <div class="seg" id="policySeg">
@@ -415,97 +526,119 @@
             <button data-p="auto" title="按客户端传来的模型名路由">跟随客户端</button>
           </div>
         </div>
-        <div class="card-body route-body">
-          <select class="route-select" id="modelSelect" aria-label="当前调用模型"></select>
-          <div class="route-meta" id="routeMeta"></div>
+        <div class="card-body">
+          <div class="route-body">
+            <select class="route-select" id="modelSelect" aria-label="当前调用模型"></select>
+            <div class="route-meta" id="routeMeta"></div>
+          </div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-head">
-          <h2 id="formTitle">编辑 Provider</h2>
+      <div class="card" id="cardEditor" data-cid="editor">
+        <div class="card-head clickable" data-toggle="editor">
+          <span class="chev">▾</span>
+          <h2 id="formTitle">编辑供应商</h2>
           <span class="tag warn" id="dirtyTag" hidden>未保存</span>
           <div class="grow"></div>
           <span class="hint mono" id="editorId"></span>
         </div>
+        <div class="card-body">
 
-        <div class="section">
-          <div class="section-title">基本信息</div>
-          <div class="row">
-            <div>
-              <label class="f" for="f_id">ID <span class="opt">（路由用，唯一，创建后不可改）</span></label>
-              <input id="f_id" class="mono" placeholder="nextapi" autocomplete="off" />
+          <div class="sec" data-sid="basic">
+            <div class="sec-head" data-sec="basic">
+              <span class="chev">▾</span>
+              <h3 class="sec-title">基本信息</h3>
             </div>
-            <div>
-              <label class="f" for="f_name">显示名称</label>
-              <input id="f_name" placeholder="NextApi" autocomplete="off" />
+            <div class="sec-body">
+              <div class="row">
+                <div>
+                  <label class="f" for="f_id">ID <span class="opt">路由用，唯一，创建后不可改</span></label>
+                  <input id="f_id" class="mono" placeholder="nextapi" autocomplete="off" />
+                </div>
+                <div>
+                  <label class="f" for="f_name">显示名称</label>
+                  <input id="f_name" placeholder="NextApi" autocomplete="off" />
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label class="f" for="f_api">协议</label>
+                  <select id="f_api">
+                    <option value="openai">OpenAI 兼容 · /v1/chat · /v1/responses</option>
+                    <option value="anthropic">Anthropic · /v1/messages</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="f" for="f_base">Base URL</label>
+                  <input id="f_base" class="mono" placeholder="https://api.example.com/v1" autocomplete="off" />
+                </div>
+              </div>
             </div>
           </div>
-          <div class="row">
-            <div>
-              <label class="f" for="f_api">协议类型</label>
-              <select id="f_api">
-                <option value="openai">OpenAI 兼容 · /v1/chat · /v1/responses</option>
-                <option value="anthropic">Anthropic · /v1/messages</option>
-              </select>
+
+          <div class="sec" data-sid="auth">
+            <div class="sec-head" data-sec="auth">
+              <span class="chev">▾</span>
+              <h3 class="sec-title">鉴权</h3>
             </div>
-            <div>
-              <label class="f" for="f_base">Base URL</label>
-              <input id="f_base" class="mono" placeholder="https://api.example.com/v1" autocomplete="off" />
+            <div class="sec-body">
+              <label class="f" for="f_key">API Key <span class="opt">支持 <span class="mono">env:变量名</span></span></label>
+              <input id="f_key" class="mono" type="text" placeholder="sk-… 或 env:NEXTAPI_API_KEY" autocomplete="off" spellcheck="false" />
+              <div class="hint" id="keyHint" style="margin-top:6px"></div>
             </div>
           </div>
-        </div>
 
-        <div class="section">
-          <div class="section-title">鉴权</div>
-          <div>
-            <label class="f" for="f_key">API Key <span class="opt">（支持 <span class="mono">env:变量名</span> 引用环境变量）</span></label>
-            <input id="f_key" class="mono" type="text" placeholder="sk-… 或 env:NEXTAPI_API_KEY" autocomplete="off" spellcheck="false" />
-            <div class="hint" id="keyHint" style="margin-top:6px"></div>
+          <div class="sec" data-sid="models">
+            <div class="sec-head" data-sec="models">
+              <span class="chev">▾</span>
+              <h3 class="sec-title">模型列表 <span class="cnt" id="modelCount">0</span></h3>
+            </div>
+            <div class="sec-body">
+              <div class="models" id="modelRows"></div>
+              <button class="add-model" id="btnAddModel">+ 添加模型</button>
+              <div class="hint" style="margin-top:8px">
+                上下文留空用上游默认值；填 <span class="mono">262144</span> 会写进 <span class="mono">/v1/models</span>。
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div class="section">
-          <div class="section-title">模型列表 <span class="count" id="modelCount">0</span></div>
-          <div class="models" id="modelRows"></div>
-          <button class="add-model" id="btnAddModel">+ 添加模型</button>
-          <div class="hint" style="margin-top:9px">
-            上下文窗口留空则用上游默认值；填 <span class="mono">262144</span> 这类数字会写进 <span class="mono">/v1/models</span> 与 Codex 目录。
+          <div class="actions">
+            <button class="btn" id="btnSave">保存</button>
+            <button class="btn ghost" id="btnActive">设为当前</button>
+            <button class="btn ghost" id="btnTest">测试连接</button>
+            <button class="btn danger" id="btnDel" style="margin-left:auto">删除</button>
+            <span class="result" id="testResult"></span>
           </div>
-        </div>
-
-        <div class="actions">
-          <button class="btn" id="btnSave">保存</button>
-          <button class="btn ghost" id="btnActive">设为当前</button>
-          <button class="btn ghost" id="btnTest">测试连接</button>
-          <button class="btn danger" id="btnDel" style="margin-left:auto">删除</button>
-          <span class="result" id="testResult"></span>
         </div>
       </div>
 
       <!-- 客户端接入 -->
-      <div class="card">
-        <div class="card-head">
+      <div class="card" id="cardSnip" data-cid="snip">
+        <div class="card-head clickable" data-toggle="snip">
+          <span class="chev">▾</span>
           <h2>客户端接入</h2>
           <div class="grow"></div>
-          <span class="hint">真实 key 由网关注入，客户端随便填</span>
+          <span class="hint">真实 key 由网关注入</span>
         </div>
-        <div class="tabs" id="tabs">
-          <button class="tab on" data-k="codex">Codex</button>
-          <button class="tab" data-k="cursor">Cursor</button>
-          <button class="tab" data-k="curl">cURL</button>
-          <button class="tab" data-k="claude">Claude Code</button>
-        </div>
-        <div class="snip-wrap">
-          <pre class="snip" id="snip"></pre>
-          <button class="copy" id="btnCopySnip">复制</button>
-        </div>
-        <div class="section" style="border-top:1px solid var(--line-soft)">
-          <div class="section-title">路由规则</div>
-          <div class="hint">
-            <b style="color:var(--text)">网关固定</b>（推荐）：客户端传什么模型名都被替换成上面的「当前调用模型」，<br />
-            只有写成 <span class="mono">providerId/modelId</span> 时才精确指定、不受策略影响。<br />
-            <b style="color:var(--text)">跟随客户端</b>：按模型名匹配 provider（唯一声明者优先），匹配不到才用当前设置。
+        <div class="card-body">
+          <div class="tabs" id="tabs">
+            <button class="tab on" data-k="codex">Codex</button>
+            <button class="tab" data-k="cursor">Cursor</button>
+            <button class="tab" data-k="curl">cURL</button>
+            <button class="tab" data-k="claude">Claude Code</button>
+          </div>
+          <div class="snip-wrap">
+            <pre class="snip" id="snip"></pre>
+            <button class="copy" id="btnCopySnip">复制</button>
+          </div>
+          <div class="sec" style="border-top:1px solid var(--line-soft)">
+            <div class="sec-body" style="padding-top:10px">
+              <div class="sec-title" style="margin-bottom:7px">路由规则</div>
+              <div class="hint">
+                <b style="color:var(--text-2)">网关固定</b>：客户端传什么模型名都被替换成「当前调用模型」，写成 <span class="mono">providerId/modelId</span> 时可精确指定。<br />
+                <b style="color:var(--text-2)">跟随客户端</b>：按模型名匹配 provider（唯一声明者优先），匹配不到用当前设置。
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -514,47 +647,85 @@
 </div>
 
 <!-- 请求日志 -->
-<div class="shell" style="padding-top:0">
-  <div class="card">
-    <div class="card-head">
-      <h2>请求日志</h2>
-      <span class="count" id="logCount">0</span>
+<div class="shell" style="padding-top:14px">
+  <div class="card" id="cardLogs" data-cid="logs">
+    <div class="card-head clickable" data-toggle="logs">
+      <span class="chev">▾</span>
+      <h2>请求日志 <span class="cnt" id="logCount">0</span></h2>
       <div class="grow"></div>
       <div class="seg" id="logFilter">
         <button class="on" data-f="all">全部</button>
         <button data-f="err">仅失败</button>
       </div>
-      <label class="switch">
+      <label class="switch" title="每 4 秒自动刷新">
         <input type="checkbox" id="autoRefresh" checked />
         <span class="track"></span>
-        自动刷新
+        自动
       </label>
-      <button class="btn ghost sm" id="btnLogs">刷新</button>
     </div>
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th style="width:84px">状态</th>
-            <th style="width:120px">Provider</th>
-            <th>模型</th>
-            <th style="width:170px">路径</th>
-            <th style="width:120px">耗时</th>
-            <th style="width:84px">时间</th>
-          </tr>
-        </thead>
-        <tbody id="logs">
-          <tr><td colspan="6" class="hint" style="padding:22px 12px;text-align:center">暂无请求</td></tr>
-        </tbody>
-      </table>
+    <div class="card-body flush">
+      <div class="logs-toolbar">
+        <span class="log-size" id="logSize">
+          <span class="bar"><i id="logBar" style="width:0%"></i></span>
+          <span id="logSizeText">—</span>
+        </span>
+        <div class="grow"></div>
+        <button class="btn subtle sm" id="btnLogPolicy">策略</button>
+        <a class="btn subtle sm" id="btnLogDl" href="/api/logs/download?name=requests.log" download>下载</a>
+        <button class="btn danger sm" id="btnLogClear">清空</button>
+        <button class="btn ghost sm" id="btnLogs">刷新</button>
+      </div>
+
+      <div class="log-policy" id="logPolicy" hidden>
+        <label class="fld"><span>单文件上限</span>
+          <select id="cfgMaxSize">
+            <option value="512">512 KB</option>
+            <option value="1024">1 MB</option>
+            <option value="2048">2 MB</option>
+            <option value="5120">5 MB</option>
+            <option value="20480">20 MB</option>
+          </select>
+        </label>
+        <label class="fld"><span>保留归档</span>
+          <select id="cfgKeep">
+            <option value="1">1 份</option>
+            <option value="2">2 份</option>
+            <option value="3">3 份</option>
+            <option value="5">5 份</option>
+            <option value="10">10 份</option>
+          </select>
+        </label>
+        <label class="fld"><span>写入磁盘</span>
+          <label class="switch" style="height:28px"><input type="checkbox" id="cfgEnabled" /><span class="track"></span>启用</label>
+        </label>
+        <div class="log-files" id="logFiles"></div>
+      </div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:74px">状态</th>
+              <th style="width:110px">供应商</th>
+              <th>模型</th>
+              <th style="width:158px">路径</th>
+              <th style="width:104px">耗时</th>
+              <th style="width:108px">时间</th>
+            </tr>
+          </thead>
+          <tbody id="logs">
+            <tr><td colspan="6" class="hint" style="padding:22px 12px;text-align:center">暂无请求</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
 
 <div class="page-foot">
   <span id="footRuntime">—</span>
-  <span class="grow"></span>
-  <span><kbd>Ctrl</kbd> + <kbd>S</kbd> 保存</span>
+  <div class="grow"></div>
+  <span><kbd>Ctrl</kbd>+<kbd>S</kbd> 保存</span>
   <a href="https://github.com/Linix0/llm-gateway" target="_blank" rel="noreferrer">GitHub ↗</a>
 </div>
 
@@ -585,15 +756,18 @@ let state = { server: { host: '127.0.0.1', port: 8787 }, providers: [], active: 
 let selId = null;
 let isNew = false;
 let dirty = false;
-let clearKey = false;
-let provStatus = {};      // id -> 'ok' | 'err' | 'load'
+let provStatus = {};
+let provOpen = new Set();
+let provFilter = '';
 let logs = [];
 let logFilter = 'all';
+let logMeta = null;
 let snipKey = 'codex';
 let autoTimer = null;
 
 const LS_THEME = 'lg.theme';
 const LS_AUTO = 'lg.autorefresh';
+const LS_COLLAPSE = 'lg.collapsed';
 
 /* ------------------------------------------------------------------ */
 /* 工具                                                                */
@@ -627,7 +801,7 @@ function toast(msg, kind) {
 
 function copyText(text) {
   const done = () => toast('已复制到剪贴板', 'ok');
-  if (navigator.clipboard && window.isSecureContext !== false) {
+  if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
   } else {
     fallbackCopy(text, done);
@@ -648,10 +822,39 @@ function fmtUptime(sec) {
   const d = Math.floor(sec / 86400);
   const h = Math.floor((sec % 86400) / 3600);
   const m = Math.floor((sec % 3600) / 60);
-  if (d) return `${d}天${h}小时`;
-  if (h) return `${h}小时${m}分`;
-  if (m) return `${m}分${sec % 60}秒`;
-  return `${Math.max(1, Math.round(sec))}秒`;
+  if (d) return `${d} 天 ${h} 小时`;
+  if (h) return `${h} 小时 ${m} 分`;
+  if (m) return `${m} 分`;
+  return `${Math.max(1, Math.round(sec))} 秒`;
+}
+
+function fmtBytes(n) {
+  if (n == null) return '—';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+/** 本地时区的 HH:MM:SS；跨天时带上月/日 */
+function fmtLogTime(item) {
+  const d = item.at ? new Date(item.at) : item.ts ? new Date(item.ts) : null;
+  if (!d || isNaN(d.getTime())) return '—';
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  const t = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  if (sameDay) return t;
+  const md = `${d.getMonth() + 1}/${d.getDate()}`;
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return (sameYear ? md : `${d.getFullYear()}/${md}`) + ' ' + t;
+}
+
+function fmtLogFull(item) {
+  const d = item.at ? new Date(item.at) : item.ts ? new Date(item.ts) : null;
+  if (!d || isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
+    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
 function confirmBox(title, desc, okText) {
@@ -674,6 +877,39 @@ function setDirty(v) {
   dirty = v;
   $('#dirtyTag').hidden = !v;
 }
+
+/* ------------------------------------------------------------------ */
+/* 折叠                                                                */
+/* ------------------------------------------------------------------ */
+let collapsed = new Set();
+(function initCollapse() {
+  const raw = localStorage.getItem(LS_COLLAPSE);
+  if (raw === null) collapsed = new Set(['snip']);
+  else { try { collapsed = new Set(JSON.parse(raw)); } catch (_) { collapsed = new Set(); } }
+})();
+
+function applyCollapse() {
+  $$('.card[data-cid]').forEach((c) => c.classList.toggle('collapsed', collapsed.has(c.dataset.cid)));
+  const anyOpen = $$('.card[data-cid]').some((c) => !c.classList.contains('collapsed'));
+  $('#btnCollapseAll').textContent = anyOpen ? '⌃' : '⌄';
+  $('#btnCollapseAll').title = anyOpen ? '折叠全部' : '展开全部';
+}
+function toggleCard(id, force) {
+  const willCollapse = force === undefined ? !collapsed.has(id) : force;
+  if (willCollapse) collapsed.add(id); else collapsed.delete(id);
+  localStorage.setItem(LS_COLLAPSE, JSON.stringify(Array.from(collapsed)));
+  applyCollapse();
+}
+
+$$('[data-toggle]').forEach((h) => {
+  h.addEventListener('click', (e) => {
+    if (e.target.closest('button, a, input, select, label')) return;
+    toggleCard(h.dataset.toggle);
+  });
+});
+$$('[data-sec]').forEach((h) => {
+  h.addEventListener('click', () => h.closest('.sec').classList.toggle('collapsed'));
+});
 
 /* ------------------------------------------------------------------ */
 /* 渲染：当前调用模型                                                  */
@@ -705,7 +941,7 @@ function renderRoute() {
   $$('#policySeg button').forEach((b) => b.classList.toggle('on', b.dataset.p === state.modelPolicy));
 
   if (!groups) {
-    $('#routeMeta').innerHTML = '先在左边加一个 provider 和模型。';
+    $('#routeMeta').innerHTML = '先在左边加一个供应商和模型。';
     return;
   }
   if (fixed) {
@@ -713,47 +949,80 @@ function renderRoute() {
       $('#routeMeta').innerHTML = '<span class="warn-t">固定模式下还没选模型</span>，选一个即可生效。';
     } else {
       $('#routeMeta').innerHTML =
-        `所有请求都会走 <b>${escapeHtml(state.active)}</b> / <b>${escapeHtml(cur)}</b>${am ? ctxLabel(am) : ''}<br />` +
-        `Codex / Cursor 里写什么模型名都不影响结果；想临时指定别的，在模型名里写 <b>providerId/modelId</b>。`;
+        `请求固定走 <b>${escapeHtml(state.active)}</b> / <b>${escapeHtml(cur)}</b>${am ? ctxLabel(am) : ''}。<br />` +
+        `客户端里写什么模型名都不影响；要临时指定别的，写成 <b>providerId/modelId</b>。`;
     }
   } else {
     $('#routeMeta').innerHTML =
-      `按客户端传来的模型名路由，<b>${escapeHtml(state.active)}</b> 是匹配不到时的兜底` +
-      (cur ? `（默认 <b>${escapeHtml(cur)}</b>）` : '') + '。<br />客户端没传模型时会用这里的设置。';
+      `按客户端传来的模型名路由，<b>${escapeHtml(state.active)}</b> 作为兜底` +
+      (cur ? `（默认 <b>${escapeHtml(cur)}</b>）` : '') + '。<br />客户端没传模型时用这里的设置。';
   }
 }
 
 /* ------------------------------------------------------------------ */
 /* 渲染：provider 列表                                                  */
 /* ------------------------------------------------------------------ */
+function hostOf(url) {
+  try { return new URL(url).host; } catch (_) { return url || ''; }
+}
+
 function renderList() {
   const el = $('#list');
   $('#provCount').textContent = state.providers.length;
+  $('#provTools').hidden = state.providers.length < 5;
+
   if (!state.providers.length) {
-    el.innerHTML = '<li class="empty">还没有配置<br />点右上角「+ 新增」加一个上游</li>';
+    el.innerHTML = '<li class="empty">还没有配置<br />点右上角「新增」加一个上游</li>';
     return;
   }
-  el.innerHTML = state.providers.map((p) => {
+
+  const kw = provFilter.trim().toLowerCase();
+  const list = kw
+    ? state.providers.filter((p) =>
+        (p.name || '').toLowerCase().includes(kw) ||
+        p.id.toLowerCase().includes(kw) ||
+        (p.baseUrl || '').toLowerCase().includes(kw) ||
+        (p.models || []).some((m) => (m.id || '').toLowerCase().includes(kw)))
+    : state.providers;
+
+  if (!list.length) {
+    el.innerHTML = '<li class="empty">没有匹配的供应商</li>';
+    return;
+  }
+
+  el.innerHTML = list.map((p) => {
     const st = provStatus[p.id] || '';
-    const models = (p.models || []).length;
+    const models = p.models || [];
     const tags = [
       p.id === state.active ? '<span class="tag cur">当前</span>' : '',
-      p.api === 'anthropic' ? '<span class="tag api-a">A</span>' : '<span class="tag api-o">O</span>',
-      p.hasKey ? '' : '<span class="tag warn">无 KEY</span>'
+      p.api === 'anthropic' ? '<span class="tag a">A</span>' : '<span class="tag o">O</span>',
+      p.hasKey ? '' : '<span class="tag warn">无KEY</span>'
     ].join('');
-    return `<li class="prov ${p.id === selId ? 'sel' : ''}" data-id="${escapeHtml(p.id)}" role="button" tabindex="0">
-      <span class="pstatus ${st}"></span>
-      <div class="info">
-        <div class="nm"><span class="t">${escapeHtml(p.name || p.id)}</span>${tags}</div>
-        <div class="mt mono">${escapeHtml(p.baseUrl)} · ${models} 个模型</div>
+    const open = provOpen.has(p.id);
+    return `<li class="prov ${p.id === selId ? 'sel' : ''} ${open ? 'open' : ''}" data-id="${escapeHtml(p.id)}">
+      <div class="prov-row" role="button" tabindex="0">
+        <span class="pstatus ${st}"></span>
+        <div class="info">
+          <div class="nm"><span class="t">${escapeHtml(p.name || p.id)}</span>${tags}</div>
+          <div class="mt">${escapeHtml(hostOf(p.baseUrl))} · ${models.length} 模型</div>
+        </div>
+        <button class="prov-more" title="展开模型" aria-label="展开模型">▶</button>
       </div>
+      ${models.length ? `<div class="prov-models">${models.slice(0, 40).map((m) =>
+        `<span class="mchip ${m.id === state.activeModel ? 'cur' : ''}">${escapeHtml(m.id)}</span>`).join('')}</div>` : ''}
     </li>`;
   }).join('');
 
   el.querySelectorAll('.prov').forEach((n) => {
-    const go = () => selectProvider(n.dataset.id);
-    n.onclick = go;
-    n.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+    const id = n.dataset.id;
+    const go = () => selectProvider(id);
+    n.querySelector('.prov-row').onclick = go;
+    n.querySelector('.prov-row').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+    n.querySelector('.prov-more').onclick = (e) => {
+      e.stopPropagation();
+      if (provOpen.has(id)) provOpen.delete(id); else provOpen.add(id);
+      renderList();
+    };
   });
 }
 
@@ -767,7 +1036,7 @@ function addModelRow(m) {
     <input class="mid mono" placeholder="模型 ID" value="${escapeHtml(m && m.id ? m.id : '')}" autocomplete="off" spellcheck="false" />
     <input class="mname" placeholder="显示名（可选）" value="${escapeHtml(m && m.name ? m.name : '')}" autocomplete="off" />
     <input class="mctx mono" placeholder="上下文" inputmode="numeric" value="${escapeHtml(m && m.contextWindow ? m.contextWindow : '')}" autocomplete="off" />
-    <button class="icon-btn" title="删除这一行" aria-label="删除这一行">✕</button>`;
+    <button class="icon-btn danger" title="删除这一行" aria-label="删除这一行" style="width:26px;height:26px;font-size:11px">✕</button>`;
   row.querySelector('.icon-btn').onclick = () => {
     row.remove();
     if (!$$('#modelRows .mrow').length) addModelRow();
@@ -780,8 +1049,10 @@ function addModelRow(m) {
 }
 
 function updateModelCount() {
-  const n = $$('#modelRows .mrow').filter((r) => r.querySelector('.mid').value.trim()).length;
+  const rows = $$('#modelRows .mrow');
+  const n = rows.filter((r) => r.querySelector('.mid').value.trim()).length;
   $('#modelCount').textContent = n;
+  $('#modelRows').classList.toggle('scroll', rows.length > 8);
 }
 
 function modelsFromRows() {
@@ -814,9 +1085,8 @@ function selectProvider(id) {
     if (!p) return;
     selId = id;
     isNew = false;
-    clearKey = false;
     setDirty(false);
-    $('#formTitle').textContent = '编辑 Provider';
+    $('#formTitle').textContent = '编辑供应商';
     $('#editorId').textContent = p.id;
     $('#f_id').value = p.id;
     $('#f_id').disabled = true;
@@ -825,13 +1095,13 @@ function selectProvider(id) {
     $('#f_base').value = p.baseUrl || '';
     $('#f_key').value = '';
     $('#f_key').placeholder = p.hasKey
-      ? '已保存 ' + (p.auth && p.auth.value ? p.auth.value : '****') + ' · 留空表示不修改'
+      ? '已保存 ' + (p.auth && p.auth.value ? p.auth.value : '****') + ' · 留空不修改'
       : 'sk-… 或 env:NEXTAPI_API_KEY';
     $('#keyHint').innerHTML = p.keyRef
       ? '当前用环境变量引用，key 不存在配置文件里。'
       : p.hasKey
         ? '想换 key 直接覆盖输入；留空保存不会改动已存的 key。'
-        : '尚未配置 key，该 provider 的请求会返回 401。';
+        : '尚未配置 key，该供应商的请求会返回 401。';
     setModelRows(p.models || []);
     $('#testResult').className = 'result';
     $('#testResult').textContent = '';
@@ -841,7 +1111,7 @@ function selectProvider(id) {
     updateSnippets();
   };
   if (dirty) {
-    confirmBox('放弃未保存的修改？', '当前表单有未保存的改动，切换 provider 会丢失它们。', '放弃修改').then((ok) => { if (ok) go(); });
+    confirmBox('放弃未保存的修改？', '当前表单有未保存的改动，切换供应商会丢失它们。', '放弃修改').then((ok) => { if (ok) go(); });
   } else {
     go();
   }
@@ -851,9 +1121,8 @@ function newProvider() {
   const go = () => {
     selId = null;
     isNew = true;
-    clearKey = false;
     setDirty(false);
-    $('#formTitle').textContent = '新增 Provider';
+    $('#formTitle').textContent = '新增供应商';
     $('#editorId').textContent = '未保存';
     $('#f_id').disabled = false;
     $('#f_id').value = '';
@@ -869,10 +1138,11 @@ function newProvider() {
     $('#btnDel').disabled = true;
     $('#btnActive').disabled = true;
     renderList();
+    toggleCard('editor', false);
     $('#f_id').focus();
   };
   if (dirty) {
-    confirmBox('放弃未保存的修改？', '当前表单有未保存的改动，新增 provider 会丢失它们。', '放弃修改').then((ok) => { if (ok) go(); });
+    confirmBox('放弃未保存的修改？', '当前表单有未保存的改动，新增供应商会丢失它们。', '放弃修改').then((ok) => { if (ok) go(); });
   } else {
     go();
   }
@@ -898,20 +1168,22 @@ function collectForm() {
 async function load() {
   const s = await api('/api/state');
   state = s;
-  const addr = s.server.host + ':' + s.server.port;
-  $('#endpoint').textContent = addr;
   $('#dot').className = 'dot on';
-  $('#statusText').textContent = '运行中 · 已运行 ' + fmtUptime(s.runtime && s.runtime.uptime);
-  $('#chipActive').innerHTML = '当前 <b>' + escapeHtml(s.activeModel || '未指定') + '</b>' +
-    (s.modelPolicy === 'fixed' ? '' : ' <span style="opacity:.7">(自动)</span>');
-  $('#chipActive').title = 'provider: ' + (s.active || '—') + ' · 策略: ' + (s.modelPolicy === 'fixed' ? '网关固定' : '跟随客户端');
+  $('#statusText').textContent = '已运行 ' + fmtUptime(s.runtime && s.runtime.uptime);
+  const fixed = s.modelPolicy === 'fixed';
+  $('#pillModel').textContent = s.activeModel || '未指定';
+  $('#pillMode').textContent = fixed ? '固定' : '自动';
+  $('#pillMode').title = fixed ? '所有请求固定用这个模型' : '按客户端模型名路由';
+  $('#verChip').textContent = 'v' + ((s.runtime && s.runtime.version) || '1.3');
   renderRoute();
+
   const total = new Set();
   s.providers.forEach((p) => (p.models || []).forEach((m) => total.add(m.id)));
-  $('#chipModels').textContent = total.size;
-  const rt = s.runtime || {};
-  $('#footRuntime').textContent = `v${rt.version || '—'} · Node ${rt.node || '—'} · PID ${rt.pid || '—'} · 启动于 ${(rt.startedAt || '').replace('T', ' ').slice(0, 19)}`;
   renderList();
+
+  const rt = s.runtime || {};
+  $('#footRuntime').textContent =
+    `v${rt.version || '—'} · Node ${rt.node || '—'} · PID ${rt.pid || '—'} · 启动于 ${(rt.startedAt || '').replace('T', ' ').slice(0, 19)}`;
   updateSnippets();
   if (isNew) return;
   if (!selId || !s.providers.some((p) => p.id === selId)) {
@@ -946,7 +1218,7 @@ async function save() {
     selId = body.id;
     setDirty(false);
     await load();
-    toast(wasNew ? '已新增 provider' : '已保存', 'ok');
+    toast(wasNew ? '已新增供应商' : '已保存', 'ok');
   } catch (e) {
     toast(e.message, 'err');
   } finally {
@@ -971,7 +1243,7 @@ function updateSnippets() {
   const base = `http://${s.host}:${s.port}`;
   const model = firstModel();
   const fixedNote = state.modelPolicy === 'fixed'
-    ? '\n# 模型由网关决定：想换模型在网关界面点，这里不用改（写了也会被忽略）'
+    ? '\n# 模型由网关决定：换模型在网关界面点，这里不用改'
     : '';
   const map = {
     codex: `# ~/.codex/config.toml
@@ -1018,23 +1290,43 @@ function renderLogs() {
     const s = i.status || 0;
     const cls = !s ? 'none' : s >= 500 ? 'err' : s >= 400 ? 'warn' : 'ok';
     const label = s ? s : '—';
-    const w = Math.max(2, Math.round(((i.ms || 0) / maxMs) * 54));
+    const w = Math.max(2, Math.round(((i.ms || 0) / maxMs) * 44));
+    const color = cls === 'err' ? 'background:var(--err)' : cls === 'warn' ? 'background:var(--warn)' : '';
     return `<tr>
       <td><span class="st ${cls}">${label}</span></td>
-      <td>${i.provider ? `<span class="prov-chip mono">${escapeHtml(i.provider)}</span>` : '<span class="hint">—</span>'}</td>
+      <td>${i.provider ? `<span class="prov-chip">${escapeHtml(i.provider)}</span>` : '<span class="hint">—</span>'}</td>
       <td class="mono" style="color:var(--text)">${escapeHtml(i.model || '—')}</td>
       <td class="mono hint">${escapeHtml(i.path || '')}</td>
-      <td><div class="bars"><span class="bar" style="width:${w}px;${cls === 'err' ? 'background:var(--err)' : cls === 'warn' ? 'background:var(--warn)' : ''}"></span><span class="num hint">${i.ms != null ? i.ms + ' ms' : '—'}</span></div></td>
-      <td class="num hint">${(i.ts || '').slice(11, 19)}</td>
+      <td><div class="bars"><span class="bar-fill" style="width:${w}px;${color}"></span><span class="num hint">${i.ms != null ? i.ms + ' ms' : '—'}</span></div></td>
+      <td class="num hint" title="${escapeHtml(fmtLogFull(i))}">${fmtLogTime(i)}</td>
     </tr>`;
   }).join('');
 }
 
 async function loadLogs() {
   try {
-    const r = await api('/api/logs?limit=50');
+    const r = await api('/api/logs?limit=80');
     logs = r.items || [];
     renderLogs();
+  } catch (_) { /* 静默 */ }
+}
+
+async function loadLogMeta() {
+  try {
+    const m = await api('/api/logs/meta');
+    logMeta = m;
+    const conf = m.conf || {};
+    const max = (conf.maxSizeKB || 2048) * 1024;
+    const pct = Math.min(100, Math.round((m.activeBytes / max) * 100));
+    $('#logBar').style.width = pct + '%';
+    $('#logBar').classList.toggle('warn', pct > 80);
+    $('#logSizeText').textContent = `${fmtBytes(m.activeBytes)} / ${fmtBytes(max)}${conf.enabled === false ? ' · 已停写' : ''}`;
+    $('#cfgMaxSize').value = String(conf.maxSizeKB || 2048);
+    $('#cfgKeep').value = String(conf.keep || 3);
+    $('#cfgEnabled').checked = conf.enabled !== false;
+    $('#logFiles').innerHTML = (m.files || []).length
+      ? m.files.map((f) => `<a class="file-link" href="/api/logs/download?name=${encodeURIComponent(f.name)}" download title="${f.mtime} · ${fmtBytes(f.size)}">${f.name === 'requests.log' ? '当前 · ' : ''}${escapeHtml(f.name)} · ${fmtBytes(f.size)}</a>`).join('')
+      : '<span class="hint">暂无日志文件</span>';
   } catch (_) { /* 静默 */ }
 }
 
@@ -1044,19 +1336,26 @@ async function loadLogs() {
 $('#btnSave').onclick = save;
 $('#btnNew').onclick = newProvider;
 
-/* 当前调用模型 / 路由策略 */
+$('#modelPill').onclick = () => {
+  toggleCard('route', false);
+  $('#cardRoute').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => $('#modelSelect').focus(), 260);
+};
+
 $('#modelSelect').addEventListener('change', async (e) => {
   const v = e.target.value;
   if (!v) return;
   const [provider, model] = v.split('::');
   try {
     await api('/api/model', { method: 'POST', body: JSON.stringify({ provider, model }) });
-    toast('当前模型已切换为 ' + model, 'ok');
+    toast('当前模型：' + model, 'ok');
     await load();
+    renderList();
   } catch (err) {
     toast(err.message, 'err');
   }
 });
+
 $('#policySeg').addEventListener('click', async (e) => {
   const b = e.target.closest('button[data-p]');
   if (!b || b.dataset.p === state.modelPolicy) return;
@@ -1068,7 +1367,10 @@ $('#policySeg').addEventListener('click', async (e) => {
     toast(err.message, 'err');
   }
 });
+
 $('#btnAddModel').onclick = () => { addModelRow(); setDirty(true); };
+
+$('#provFilter').addEventListener('input', (e) => { provFilter = e.target.value; renderList(); });
 
 ['#f_id', '#f_name', '#f_api', '#f_base', '#f_key'].forEach((sel) => {
   $(sel).addEventListener('input', () => setDirty(true));
@@ -1081,7 +1383,7 @@ $('#btnActive').onclick = async () => {
   btn.disabled = true;
   try {
     await api('/api/active', { method: 'POST', body: JSON.stringify({ id: selId }) });
-    toast('已切换为当前 provider：' + selId, 'ok');
+    toast('已切换当前供应商：' + selId, 'ok');
     await load();
   } catch (e) {
     toast(e.message, 'err');
@@ -1106,11 +1408,11 @@ $('#btnTest').onclick = async () => {
     if (r.ok) {
       provStatus[selId] = 'ok';
       out.className = 'result ok';
-      out.innerHTML = `<span class="ico">✓</span> 连接正常 · HTTP ${r.status}${r.models != null ? ' · ' + r.models + ' 个模型' : ''}`;
+      out.innerHTML = `<span class="ico">✓</span> 连接正常 · HTTP ${r.status}${r.models != null ? ' · ' + r.models + ' 模型' : ''}`;
     } else {
       provStatus[selId] = 'err';
       out.className = 'result err';
-      out.innerHTML = `<span class="ico">✗</span> ${escapeHtml(r.status ? 'HTTP ' + r.status : '连接失败')}${r.message ? ' · ' + escapeHtml(String(r.message).slice(0, 120)) : ''}`;
+      out.innerHTML = `<span class="ico">✗</span> ${escapeHtml(r.status ? 'HTTP ' + r.status : '连接失败')}${r.message ? ' · ' + escapeHtml(String(r.message).slice(0, 90)) : ''}`;
     }
   } catch (e) {
     provStatus[selId] = 'err';
@@ -1135,23 +1437,23 @@ $('#btnTestAll').onclick = async () => {
     try {
       const r = await api('/api/test', { method: 'POST', body: JSON.stringify({ id: p.id }) });
       provStatus[p.id] = r.ok ? 'ok' : 'err';
-      results.push({ id: p.id, ok: !!r.ok, status: r.status, msg: r.message });
+      results.push({ id: p.id, ok: !!r.ok });
     } catch (e) {
       provStatus[p.id] = 'err';
-      results.push({ id: p.id, ok: false, msg: e.message });
+      results.push({ id: p.id, ok: false });
     }
     renderList();
   }
   btn.disabled = false;
   const okN = results.filter((r) => r.ok).length;
   $('#testAllHint').textContent = `${okN}/${results.length} 可用`;
-  if (okN === results.length) toast('全部 provider 连接正常', 'ok');
+  if (okN === results.length) toast('全部供应商连接正常', 'ok');
   else toast(results.filter((r) => !r.ok).map((r) => r.id).join('、') + ' 连接异常', 'err');
 };
 
 $('#btnDel').onclick = async () => {
   if (!selId) return;
-  const ok = await confirmBox('删除 provider「' + selId + '」？', '配置会从 data/config.json 中移除，无法撤销。若它是当前 provider，会自动切到第一个。', '删除');
+  const ok = await confirmBox('删除供应商「' + selId + '」？', '配置会从 data/config.json 中移除，无法撤销。若它是当前供应商，会自动切到第一个。', '删除');
   if (!ok) return;
   try {
     await api('/api/providers/' + encodeURIComponent(selId), { method: 'DELETE' });
@@ -1164,7 +1466,8 @@ $('#btnDel').onclick = async () => {
   }
 };
 
-$('#btnLogs').onclick = loadLogs;
+/* 日志 */
+$('#btnLogs').onclick = () => { loadLogs(); loadLogMeta(); };
 $('#logFilter').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-f]');
   if (!b) return;
@@ -1178,9 +1481,43 @@ $('#autoRefresh').addEventListener('change', (e) => {
 });
 function startAuto(on) {
   if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
-  if (on) autoTimer = setInterval(() => { if (!document.hidden) loadLogs(); }, 4000);
+  if (on) autoTimer = setInterval(() => { if (!document.hidden) { loadLogs(); loadLogMeta(); } }, 4000);
 }
 
+$('#btnLogPolicy').onclick = () => {
+  const p = $('#logPolicy');
+  p.hidden = !p.hidden;
+  if (!p.hidden) loadLogMeta();
+};
+
+async function saveLogConf(patch) {
+  try {
+    const r = await api('/api/logs/config', { method: 'POST', body: JSON.stringify(patch) });
+    toast('日志策略已保存', 'ok');
+    await loadLogMeta();
+    return r;
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+$('#cfgMaxSize').onchange = (e) => saveLogConf({ maxSizeKB: Number(e.target.value) });
+$('#cfgKeep').onchange = (e) => saveLogConf({ keep: Number(e.target.value) });
+$('#cfgEnabled').onchange = (e) => saveLogConf({ enabled: e.target.checked });
+
+$('#btnLogClear').onclick = async () => {
+  const ok = await confirmBox('清空请求日志？', '活动日志文件会立即清空，内存里最近 300 条记录也会一并清掉（归档文件保留）。', '清空');
+  if (!ok) return;
+  try {
+    await api('/api/logs/clear', { method: 'POST', body: JSON.stringify({ archives: false }) });
+    toast('日志已清空', 'ok');
+    await loadLogs();
+    await loadLogMeta();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
+
+/* 其它 */
 $('#tabs').addEventListener('click', (e) => {
   const b = e.target.closest('.tab');
   if (!b) return;
@@ -1189,12 +1526,18 @@ $('#tabs').addEventListener('click', (e) => {
   updateSnippets();
 });
 $('#btnCopySnip').onclick = () => copyText($('#snip').textContent);
-$('#endpoint').onclick = () => copyText($('#endpoint').textContent);
 
 $('#btnTheme').onclick = () => {
   const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
   document.documentElement.dataset.theme = next;
   localStorage.setItem(LS_THEME, next);
+};
+
+$('#btnCollapseAll').onclick = () => {
+  const anyOpen = $$('.card[data-cid]').some((c) => !c.classList.contains('collapsed'));
+  collapsed = new Set(anyOpen ? $$('.card[data-cid]').map((c) => c.dataset.cid) : []);
+  localStorage.setItem(LS_COLLAPSE, JSON.stringify(Array.from(collapsed)));
+  applyCollapse();
 };
 
 document.addEventListener('keydown', (e) => {
@@ -1215,8 +1558,10 @@ window.addEventListener('beforeunload', (e) => {
   const qTheme = new URLSearchParams(location.search).get('theme');
   const t = qTheme || localStorage.getItem(LS_THEME);
   if (t) document.documentElement.dataset.theme = t;
+
   const auto = localStorage.getItem(LS_AUTO) !== '0';
   $('#autoRefresh').checked = auto;
+  applyCollapse();
 
   load().catch(() => {
     $('#dot').className = 'dot off';
@@ -1225,8 +1570,11 @@ window.addEventListener('beforeunload', (e) => {
     toast('无法连接网关，请检查服务是否运行', 'err');
   });
   loadLogs();
+  loadLogMeta();
   startAuto(auto);
-  setInterval(() => { if (!document.hidden) load().catch(() => {}); }, 30000);
+  setInterval(() => {
+    if (!document.hidden) load().catch(() => {});
+  }, 30000);
 })();
 </script>
 </body>

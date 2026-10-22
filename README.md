@@ -10,6 +10,8 @@
   实时翻译成 chat 协议，再把结果翻回 Responses 格式 —— 这是 Codex 0.16x 唯一能接第三方上游的方式
 - 流式直通：SSE 边收边转，不缓冲、不改写响应
 - 后台常驻 + 开机自启，无窗口运行
+- **模型由网关决定**：客户端写什么模型名都不影响，实际调用哪个模型在网关界面上选
+- 请求日志按大小自动轮转，不会无限增长
 
 ```
 Codex / Cursor / SDK
@@ -146,6 +148,7 @@ llm-gateway/
 ├── data/config.json          provider 配置（本地生成，已 gitignore）
 ├── data/config.example.json  脱敏样例，复制成 config.json 使用
 ├── data/requests.log         请求日志（JSONL，已 gitignore）
+├── data/requests.log.1~.N    轮转归档（默认保留 3 份，已 gitignore）
 ├── autostart.ps1             开机自启管理
 ├── start-hidden.vbs          由 autostart.ps1 生成的无窗口启动器（已 gitignore）
 └── package.json
@@ -180,17 +183,57 @@ llm-gateway/
 
 改完 `config.json` 可在界面点「保存」或用 `POST /api/reload` 热加载；改端口需要重启进程。
 
+### 日志与轮转
+
+请求日志按 JSONL 写入 `data/requests.log`，每行一条，**时间统一用本机时区**（形如 `2026-10-22T16:39:01.089+08:00`，带偏移量，跨时区也能还原），
+另存毫秒时间戳 `at` 供界面直接渲染本地时间。
+
+在 `config.json` 里用 `logs` 段控制增长（界面「日志管理」面板也能改，改完立即生效）：
+
+```json
+{
+  "logs": { "enabled": true, "maxSizeKB": 2048, "keep": 3 }
+}
+```
+
+| 字段 | 含义 | 取值 |
+|---|---|---|
+| `enabled` | 是否落盘（关掉后只在内存里保留最近 300 条） | `true` / `false` |
+| `maxSizeKB` | 单个日志文件上限，超过就轮转 | 64 – 524288（默认 2048，即 2 MB） |
+| `keep` | 保留几份归档 | 1 – 20（默认 3） |
+
+轮转规则：`requests.log` → `.1` → `.2` … 依次后移，超出 `keep` 的最老一份直接删除。
+因此磁盘占用上限约为 `maxSizeKB × (keep + 1)`（默认约 8 MB）。
+界面可一键清空活动日志、下载日志或归档文件。
+
+## 管理界面
+
+浏览器打开 <http://127.0.0.1:8787/>：
+
+- **亮/暗双主题**：右上角切换，或用 `?theme=light` / `?theme=dark` 固定；选择记在 localStorage。
+- **分区可折叠**：路由与模型、Provider 编辑、接入片段、请求日志四块各自可收起，右上角「全部折叠/展开」，状态记住。
+- **模型行编辑器**：provider 的模型列表逐行增删改，支持 `upstream` 重映射，不用手写 JSON。
+- **接入片段**：按 provider 直接给出 Codex / Cursor / Anthropic 的配置片段，一键复制。
+- **请求日志**：按状态筛选、耗时条形图、自动刷新（默认 4 秒，可在界面关掉），并带日志容量与轮转策略面板。
+- `Ctrl/Cmd + S` 保存；有未保存改动时离开页面会提醒。
+
 ## 管理 API
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/healthz` | 健康检查（含 active、uptime） |
-| GET | `/api/state` | 当前配置（key 已脱敏） |
+| GET | `/api/state` | 当前配置（key 已脱敏），含 `runtime` 运行信息 |
 | POST | `/api/providers` | 新增/更新 provider |
 | DELETE | `/api/providers/{id}` | 删除 provider |
 | POST | `/api/active` | 切换当前 provider，body `{"id":"..."}` |
 | POST | `/api/test` | 探活，body `{"id":"..."}` |
+| POST | `/api/model` | 设置当前调用模型，body `{"model":"glm-5.3"}` |
+| POST | `/api/policy` | 设置路由策略，body `{"policy":"fixed"\|"auto"}` |
 | GET | `/api/logs?limit=50` | 最近请求日志 |
+| GET | `/api/logs/meta` | 日志容量、轮转配置与文件清单 |
+| POST | `/api/logs/config` | 调整轮转策略，body `{"maxSizeKB":4096,"keep":5,"enabled":true}` |
+| POST | `/api/logs/clear` | 清空活动日志，body `{"archives":true}` 连归档一起删 |
+| GET | `/api/logs/download?name=requests.log` | 下载日志或归档文件 |
 | POST | `/api/reload` | 重新读取 config.json |
 
 ## 安全说明

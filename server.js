@@ -59,7 +59,18 @@ const DEFAULT_CFG = {
     }
   ],
   activeModel: 'deepseek-v4.1-flash',
-  modelPolicy: 'fixed'
+  modelPolicy: 'fixed',
+  logs: { enabled: true, maxSizeKB: 2048, keep: 3 }
+};
+
+/** 日志轮转的默认与边界 */
+const LOG_DEFAULTS = { enabled: true, maxSizeKB: 2048, keep: 3 };
+const LOG_ARCHIVE_RE = /^requests\.log(\.\d+)?$/;
+
+const clampNum = (v, min, max, fallback) => {
+  const n = Number(v);
+  if (!isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
 };
 
 /* ------------------------------------------------------------------ */
@@ -81,6 +92,11 @@ function loadCfg() {
     active: raw.active || (raw.providers && raw.providers[0] ? raw.providers[0].id : ''),
     activeModel: raw.activeModel || null,
     modelPolicy: raw.modelPolicy === 'fixed' ? 'fixed' : 'auto',
+    logs: {
+      enabled: !(raw.logs && raw.logs.enabled === false),
+      maxSizeKB: clampNum((raw.logs || {}).maxSizeKB, 64, 512 * 1024, LOG_DEFAULTS.maxSizeKB),
+      keep: clampNum((raw.logs || {}).keep, 1, 20, LOG_DEFAULTS.keep)
+    },
     providers: Array.isArray(raw.providers) ? raw.providers : []
   };
   cfg.providers.forEach((p) => {
@@ -121,17 +137,72 @@ function maskKey(v) {
 /* ------------------------------------------------------------------ */
 
 const recent = [];
-const MAX_RECENT = 200;
+const MAX_RECENT = 300;
+
+/** 本地时区的 ISO 时间：2026-10-22T16:02:30.531+08:00（保留偏移量，跨时区也能还原） */
+function localIso(d) {
+  const p = (n, w) => String(n).padStart(w || 2, '0');
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const a = Math.abs(off);
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T` +
+    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}` +
+    `${sign}${p(Math.floor(a / 60))}:${p(a % 60)}`;
+}
+
+/** 当前日志文件字节数，进程启动时初始化，写入时累加 */
+let logBytes = 0;
+try { logBytes = fs.statSync(LOG_PATH).size; } catch (_) { logBytes = 0; }
+
+function logMaxBytes() {
+  const kb = (cfg.logs && cfg.logs.maxSizeKB) || LOG_DEFAULTS.maxSizeKB;
+  return kb * 1024;
+}
+
+/** 轮转：requests.log → .1 → .2 …，超出 keep 的归档直接删除 */
+function rotateLogs(reason) {
+  const keep = (cfg.logs && cfg.logs.keep) || LOG_DEFAULTS.keep;
+  try { fs.unlinkSync(LOG_PATH + '.' + keep); } catch (_) {}
+  for (let i = keep - 1; i >= 1; i--) {
+    try { fs.renameSync(LOG_PATH + '.' + i, LOG_PATH + '.' + (i + 1)); } catch (_) {}
+  }
+  try { fs.renameSync(LOG_PATH, LOG_PATH + '.1'); } catch (_) {}
+  logBytes = 0;
+  console.log(`[llm-gateway] 日志已轮转（${reason}），保留 ${keep} 份归档`);
+}
 
 function logRequest(entry) {
-  entry.ts = new Date().toISOString();
+  const when = entry.at ? new Date(entry.at) : new Date();
+  entry.at = when.getTime();         // 客户端用这个做本地时区展示
+  entry.ts = localIso(when);         // 文件里可读，带 +08:00 偏移
   recent.push(entry);
   if (recent.length > MAX_RECENT) recent.shift();
+
+  if (cfg.logs && cfg.logs.enabled === false) return;
+
+  const line = JSON.stringify(entry) + '\n';
+  const size = Buffer.byteLength(line);
   try {
-    fs.appendFile(LOG_PATH, JSON.stringify(entry) + '\n', () => {});
+    if (logBytes > 0 && logBytes + size > logMaxBytes()) rotateLogs('超过 ' + Math.round(logMaxBytes() / 1024) + ' KB');
+    fs.appendFile(LOG_PATH, line, () => {});
+    logBytes += size;
   } catch (_) {
     /* 日志失败不影响主流程 */
   }
+}
+
+/** 日志文件清单（活动文件 + 归档），供界面展示与下载 */
+function logFiles() {
+  const out = [];
+  const push = (name, archive) => {
+    try {
+      const st = fs.statSync(path.join(DATA_DIR, name));
+      out.push({ name, archive, size: st.size, mtime: localIso(st.mtime) });
+    } catch (_) {}
+  };
+  push('requests.log', false);
+  for (let i = 1; i <= (cfg.logs.keep || LOG_DEFAULTS.keep); i++) push('requests.log.' + i, true);
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -151,6 +222,12 @@ function joinUpstream(basePathRaw, reqPath) {
 /** 根据请求路径判断客户端用的是哪套协议 */
 function isAnthropicPath(p) {
   return p.startsWith('/v1/messages') || p.startsWith('/anthropic');
+}
+
+/** 是否是模型接口路径（只有这些才会被转发到上游） */
+function isModelPath(p) {
+  return p.startsWith('/v1') || p.startsWith('/anthropic') ||
+    p === '/models' || p === '/chat/completions' || p === '/responses' || p === '/messages';
 }
 
 /**
@@ -411,9 +488,11 @@ async function handleAdmin(req, res, pathname, query) {
         node: process.version,
         pid: process.pid,
         uptime: Math.round(process.uptime()),
-        startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+        startedAt: localIso(new Date(Date.now() - process.uptime() * 1000)),
         requests: recent.length,
-        logFile: path.join(DATA_DIR, 'requests.log')
+        logBytes,
+        logs: cfg.logs,
+        logFile: LOG_PATH
       },
       providers: cfg.providers.map((p) => ({
         id: p.id, name: p.name, api: p.api, baseUrl: p.baseUrl,
@@ -533,6 +612,57 @@ async function handleAdmin(req, res, pathname, query) {
   if (pathname === '/api/logs' && method === 'GET') {
     const limit = Math.min(Number(query.get('limit') || 50), MAX_RECENT);
     return sendJson(res, 200, { items: recent.slice(-limit).reverse() });
+  }
+
+  /** 日志文件与容量信息 */
+  if (pathname === '/api/logs/meta' && method === 'GET') {
+    const files = logFiles();
+    return sendJson(res, 200, {
+      conf: cfg.logs,
+      activeBytes: logBytes,
+      totalBytes: files.reduce((a, f) => a + f.size, 0),
+      dir: DATA_DIR,
+      files
+    });
+  }
+
+  /** 调整轮转策略 */
+  if (pathname === '/api/logs/config' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    if (body.maxSizeKB !== undefined) cfg.logs.maxSizeKB = clampNum(body.maxSizeKB, 64, 512 * 1024, cfg.logs.maxSizeKB);
+    if (body.keep !== undefined) cfg.logs.keep = clampNum(body.keep, 1, 20, cfg.logs.keep);
+    if (body.enabled !== undefined) cfg.logs.enabled = !!body.enabled;
+    saveCfg();
+    return sendJson(res, 200, { ok: true, conf: cfg.logs });
+  }
+
+  /** 清空日志：默认只清活动文件，archives=true 连归档一起删 */
+  if (pathname === '/api/logs/clear' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    let removed = 0;
+    try { fs.writeFileSync(LOG_PATH, ''); } catch (_) {}
+    logBytes = 0;
+    recent.length = 0;
+    if (body.archives === true) {
+      for (let i = 1; i <= 20; i++) {
+        try { fs.unlinkSync(LOG_PATH + '.' + i); removed++; } catch (_) {}
+      }
+    }
+    return sendJson(res, 200, { ok: true, removedArchives: removed });
+  }
+
+  /** 下载日志文件（只允许 requests.log 与 requests.log.N） */
+  if (pathname === '/api/logs/download' && method === 'GET') {
+    const name = String(query.get('name') || 'requests.log');
+    if (!LOG_ARCHIVE_RE.test(name)) return sendJson(res, 400, { error: { message: '文件名不合法' } });
+    const file = path.join(DATA_DIR, name);
+    if (!fs.existsSync(file)) return sendJson(res, 404, { error: { message: '日志文件不存在' } });
+    res.writeHead(200, {
+      'content-type': 'application/x-ndjson; charset=utf-8',
+      'content-disposition': `attachment; filename="${name}"`,
+      'cache-control': 'no-store'
+    });
+    return fs.createReadStream(file).pipe(res);
   }
 
   if (pathname === '/api/reload' && method === 'POST') {
@@ -803,6 +933,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && !pathname.startsWith('/v1') && !pathname.startsWith('/anthropic')) {
       return serveStatic(res, pathname);
+    }
+
+    // 只转发真正的模型接口，避免误把页面请求当成模型调用打到上游
+    if (!isModelPath(pathname)) {
+      return sendJson(res, 404, { error: { message: 'unknown endpoint: ' + pathname } });
     }
 
     // ---- 代理 ----
