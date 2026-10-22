@@ -186,3 +186,7 @@ llm-gateway/
 - 不做重试：上游返回 4xx/5xx 或 429 时原样透传给客户端，避免重复计费。
 - 不代理 WebSocket；`/v1/responses` 的流式走 SSE，已验证可用。
 - 若某个上游本身支持 `/v1/responses`，在该 provider 里加 `"upstreamResponses": true` 可跳过翻译直接透传。
+
+## License
+
+[MIT](./LICENSE)
