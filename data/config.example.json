@@ -11,6 +11,11 @@
     "maxSizeKB": 2048,
     "keep": 3
   },
+  "limits": {
+    "queue": true,
+    "queueTimeoutMs": 120000,
+    "retry": { "enabled": false, "maxAttempts": 2, "backoffMs": 800 }
+  },
   "providers": [
     {
       "id": "example",

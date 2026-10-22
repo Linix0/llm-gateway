@@ -60,12 +60,23 @@ const DEFAULT_CFG = {
   ],
   activeModel: 'deepseek-v4.1-flash',
   modelPolicy: 'fixed',
-  logs: { enabled: true, maxSizeKB: 2048, keep: 3 }
+  logs: { enabled: true, maxSizeKB: 2048, keep: 3 },
+  limits: {
+    queue: true,              // 同 provider 串行排队（上游并发=1 时不再互撞 429）
+    queueTimeoutMs: 120000,   // 排队最长等待，超时返回 503
+    retry: { enabled: false, maxAttempts: 2, backoffMs: 800 } // 429/5xx 退避重试，默认关（避免重复计费）
+  }
 };
 
 /** 日志轮转的默认与边界 */
 const LOG_DEFAULTS = { enabled: true, maxSizeKB: 2048, keep: 3 };
 const LOG_ARCHIVE_RE = /^requests\.log(\.\d+)?$/;
+
+/** limits 默认值与边界 */
+const LIMIT_DEFAULTS = {
+  queue: true, queueTimeoutMs: 120000,
+  retry: { enabled: false, maxAttempts: 2, backoffMs: 800 }
+};
 
 const clampNum = (v, min, max, fallback) => {
   const n = Number(v);
@@ -96,6 +107,15 @@ function loadCfg() {
       enabled: !(raw.logs && raw.logs.enabled === false),
       maxSizeKB: clampNum((raw.logs || {}).maxSizeKB, 64, 512 * 1024, LOG_DEFAULTS.maxSizeKB),
       keep: clampNum((raw.logs || {}).keep, 1, 20, LOG_DEFAULTS.keep)
+    },
+    limits: {
+      queue: !((raw.limits || {}).queue === false),
+      queueTimeoutMs: clampNum((raw.limits || {}).queueTimeoutMs, 5000, 600000, LIMIT_DEFAULTS.queueTimeoutMs),
+      retry: {
+        enabled: !!((raw.limits || {}).retry || {}).enabled,
+        maxAttempts: clampNum(((raw.limits || {}).retry || {}).maxAttempts, 1, 5, LIMIT_DEFAULTS.retry.maxAttempts),
+        backoffMs: clampNum(((raw.limits || {}).retry || {}).backoffMs, 100, 30000, LIMIT_DEFAULTS.retry.backoffMs)
+      }
     },
     providers: Array.isArray(raw.providers) ? raw.providers : []
   };
@@ -309,6 +329,90 @@ function usageToTokens(u) {
 }
 
 /* ------------------------------------------------------------------ */
+/* 每 provider 串行队列                                                 */
+/* 上游常有"并发=1"的硬限制，直接透传会导致并发的两个请求互相挤掉对方。     */
+/* ------------------------------------------------------------------ */
+
+const provLanes = new Map(); // providerId -> { running, queue: [task] }
+
+function laneOf(providerId) {
+  let l = provLanes.get(providerId);
+  if (!l) {
+    l = { running: 0, queue: [] };
+    provLanes.set(providerId, l);
+  }
+  return l;
+}
+
+function pumpLane(l) {
+  while (l.running < 1 && l.queue.length) {
+    const t = l.queue.shift();
+    clearTimeout(t.timer);
+    l.running++;
+    t.resolve();
+  }
+}
+
+/** 占用该 provider 的"车道"；queue=false 时直接放行。onRegister(cancel) 用于排队期间客户端断开时取消 */
+function acquireLane(providerId, onRegister) {
+  if (cfg.limits && cfg.limits.queue === false) return Promise.resolve();
+  const l = laneOf(providerId);
+  if (l.running < 1 && !l.queue.length) {
+    l.running = 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const task = { resolve, reject, timer: null };
+    if (onRegister) {
+      onRegister(() => {
+        const i = l.queue.indexOf(task);
+        if (i >= 0) {
+          l.queue.splice(i, 1);
+          clearTimeout(task.timer);
+          reject(Object.assign(new Error('客户端已断开，取消排队'), { code: 'CLIENT_ABORTED' }));
+        }
+        // 若已被 pump 消费（正在执行），取消无效——由代理层的 res close 处理
+      });
+    }
+    task.timer = setTimeout(() => {
+      const i = l.queue.indexOf(task);
+      if (i >= 0) l.queue.splice(i, 1);
+      reject(Object.assign(new Error('排队超时：该上游当前繁忙'), { code: 'QUEUE_TIMEOUT' }));
+    }, (cfg.limits && cfg.limits.queueTimeoutMs) || LIMIT_DEFAULTS.queueTimeoutMs);
+    l.queue.push(task);
+  });
+}
+
+function releaseLane(providerId) {
+  if (cfg.limits && cfg.limits.queue === false) return;
+  const l = laneOf(providerId);
+  l.running = Math.max(0, l.running - 1);
+  pumpLane(l);
+}
+
+/** 把一个"返回完成 Promise 的代理动作"放进车道执行；排队期间客户端断开则取消排队 */
+async function withLane(providerId, fn, res) {
+  let cancelQueue = null;
+  const onAbort = () => { if (cancelQueue) cancelQueue(); };
+  if (res) res.on('close', onAbort);
+  try {
+    try {
+      await acquireLane(providerId, (c) => { cancelQueue = c; });
+    } catch (e) {
+      if (e && e.code === 'CLIENT_ABORTED') return; // 排队中被取消，没占到车道，无需释放
+      throw e; // QUEUE_TIMEOUT 等交给外层返回 503
+    }
+    try {
+      await fn();
+    } finally {
+      releaseLane(providerId);
+    }
+  } finally {
+    if (res) res.removeListener('close', onAbort);
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* 路由 & 工具                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -422,13 +526,17 @@ function readBody(req) {
 }
 
 function sendJson(res, status, obj) {
-  const body = Buffer.from(JSON.stringify(obj, null, 2), 'utf8');
-  res.writeHead(status, {
-    'content-type': 'application/json; charset=utf-8',
-    'content-length': body.length,
-    'cache-control': 'no-store'
-  });
-  res.end(body);
+  // 客户端可能已断开（重试/排队期间），往销毁的响应上写会抛异常
+  if (res.destroyed || res.writableEnded) return;
+  try {
+    const body = Buffer.from(JSON.stringify(obj, null, 2), 'utf8');
+    res.writeHead(status, {
+      'content-type': 'application/json; charset=utf-8',
+      'content-length': body.length,
+      'cache-control': 'no-store'
+    });
+    res.end(body);
+  } catch (_) { /* 连接已断，忽略 */ }
 }
 
 const HOP_BY_HOP = new Set([
@@ -451,106 +559,162 @@ function forwardHeaders(src, dropExtra) {
 /* 代理核心                                                            */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 通用透传代理。返回"响应彻底结束"的 Promise，供 withLane 排队与优雅退出使用。
+ * 重试：仅当还没给客户端写过任何字节（headersSent=false）且状态为 429/5xx 或网络错误时，
+ *       整个请求重放（bodyBuf 可重用）；一旦开始流式输出就绝不再试。
+ */
 function proxyRequest(req, res, provider, bodyBuf, model) {
-  const started = Date.now();
-  const t0 = process.hrtime.bigint();
-  let target;
-  try {
-    target = new URL(provider.baseUrl);
-  } catch (_) {
-    sendJson(res, 502, { error: { message: `provider ${provider.id} 的 baseUrl 不合法`, type: 'gateway_config' } });
-    return;
-  }
-
-  const isHttps = target.protocol === 'https:';
-  const upstreamPath = joinUpstream(target.pathname, req.url.split('?')[0]) +
-    (req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '');
-
-  const drop = new Set(['host', 'content-length', 'accept-encoding']);
-  const headers = forwardHeaders(req.headers, drop);
-
-  const key = resolveKey(provider);
-  if (provider.api === 'anthropic') {
-    delete headers['authorization'];
-    if (key) headers['x-api-key'] = key;
-    if (!headers['anthropic-version']) headers['anthropic-version'] = '2023-06-01';
-  } else {
-    if (key) headers['authorization'] = 'Bearer ' + key;
-  }
-  if (bodyBuf && bodyBuf.length) headers['content-length'] = String(bodyBuf.length);
-
-  const opts = {
-    protocol: target.protocol,
-    hostname: target.hostname,
-    port: target.port || (isHttps ? 443 : 80),
-    path: upstreamPath,
-    method: req.method,
-    headers
-  };
-
-  if (process.env.DEBUG_PROXY === '1') {
-    const safe = Object.assign({}, headers);
-    if (safe.authorization) safe.authorization = 'Bearer ***';
-    if (safe['x-api-key']) safe['x-api-key'] = '***';
-    console.log('[proxy]', req.method, provider.id, opts.hostname + upstreamPath, 'body=' + (bodyBuf ? bodyBuf.length : 0));
-    console.log('[proxy] headers=', JSON.stringify(safe));
-    if (bodyBuf && bodyBuf.length) console.log('[proxy] body=', bodyBuf.toString('utf8').slice(0, 300));
-  }
-
-  const transport = isHttps ? https : http;
-  const upReq = transport.request(opts, (upRes) => {
-    const outHeaders = forwardHeaders(upRes.headers);
-    res.writeHead(upRes.statusCode || 502, outHeaders);
-
-    // 只留最后 8KB 用来抠 usage（usage 出现在响应末尾），不缓存完整响应
-    const ct = String(upRes.headers['content-type'] || '');
-    const collect = upRes.statusCode < 300 && (ct.includes('json') || ct.includes('event-stream'));
-    let tail = '';
-    upRes.on('data', (c) => {
-      if (collect) tail = (tail + c.toString('utf8')).slice(-8192);
-      res.write(c);
-    });
-    upRes.on('end', () => {
-      res.end();
-      const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
-      recordUsage(provider.id, model, upRes.statusCode, ms, usageToTokens(extractUsage(tail)));
-      logRequest({
-        path: req.url.split('?')[0],
-        model: model || '-',
-        provider: provider.id,
-        status: upRes.statusCode,
-        ms,
-        at: started
-      });
-    });
-  });
-
-  // 建连阶段 20s 超时（避免上游不可达时无限等待），拿到响应后放宽为 10 分钟空闲超时（长流式任务）
-  upReq.setTimeout(20000, () => upReq.destroy(new Error('连接上游超时(20s)，请检查网络或 baseUrl')));
-  upReq.on('response', () => {
-    upReq.setTimeout(10 * 60 * 1000, () => upReq.destroy(new Error('上游 10 分钟无数据，已中断')));
-  });
-  upReq.on('error', (err) => {
-    const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
-    recordUsage(provider.id, model, 502, ms, null);
-    logRequest({
-      path: req.url.split('?')[0], model: model || '-', provider: provider.id,
-      status: 502, ms, at: started, error: err.message
-    });
-    if (!res.headersSent) {
-      sendJson(res, 502, {
-        error: { message: `上游请求失败: ${err.message}`, type: 'gateway_upstream_error', provider: provider.id }
-      });
-    } else {
-      res.end();
+  return new Promise((finish) => {
+    const started = Date.now();
+    const t0 = process.hrtime.bigint();
+    let target;
+    try {
+      target = new URL(provider.baseUrl);
+    } catch (_) {
+      sendJson(res, 502, { error: { message: `provider ${provider.id} 的 baseUrl 不合法`, type: 'gateway_config' } });
+      return finish();
     }
-  });
 
-  res.on('close', () => {
-    if (!res.writableEnded) upReq.destroy();
-  });
+    const isHttps = target.protocol === 'https:';
+    const upstreamPath = joinUpstream(target.pathname, req.url.split('?')[0]) +
+      (req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '');
 
-  upReq.end(bodyBuf && bodyBuf.length ? bodyBuf : undefined);
+    const drop = new Set(['host', 'content-length', 'accept-encoding']);
+    const headers = forwardHeaders(req.headers, drop);
+
+    const key = resolveKey(provider);
+    if (provider.api === 'anthropic') {
+      delete headers['authorization'];
+      if (key) headers['x-api-key'] = key;
+      if (!headers['anthropic-version']) headers['anthropic-version'] = '2023-06-01';
+    } else {
+      if (key) headers['authorization'] = 'Bearer ' + key;
+    }
+    if (bodyBuf && bodyBuf.length) headers['content-length'] = String(bodyBuf.length);
+
+    const opts = {
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port || (isHttps ? 443 : 80),
+      path: upstreamPath,
+      method: req.method,
+      headers
+    };
+
+    if (process.env.DEBUG_PROXY === '1') {
+      const safe = Object.assign({}, headers);
+      if (safe.authorization) safe.authorization = 'Bearer ***';
+      if (safe['x-api-key']) safe['x-api-key'] = '***';
+      console.log('[proxy]', req.method, provider.id, opts.hostname + upstreamPath, 'body=' + (bodyBuf ? bodyBuf.length : 0));
+      console.log('[proxy] headers=', JSON.stringify(safe));
+      if (bodyBuf && bodyBuf.length) console.log('[proxy] body=', bodyBuf.toString('utf8').slice(0, 300));
+    }
+
+    const transport = isHttps ? https : http;
+    const retry = (cfg.limits && cfg.limits.retry) || LIMIT_DEFAULTS.retry;
+    let attempt = 0;
+    let currentReq = null;
+    let retryTimer = null;
+    let finished = false;
+    const done = () => { if (!finished) { finished = true; finish(); } };
+    const canRetry = () => retry.enabled && attempt < retry.maxAttempts &&
+      !res.headersSent && !res.writableEnded && !res.destroyed;
+
+    const send = () => {
+      attempt++;
+      currentReq = transport.request(opts, (upRes) => {
+        const status = upRes.statusCode || 0;
+
+        // 429/5xx：还没给客户端写过任何字节，可以整请求重放
+        if (canRetry() && (status === 429 || status >= 500)) {
+          const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
+          recordUsage(provider.id, model, status, ms, null);
+          logRequest({
+            path: req.url.split('?')[0], model: model || '-', provider: provider.id,
+            status, ms, at: started, error: `第 ${attempt} 次尝试 ${status}，${retry.backoffMs * attempt}ms 后重试`
+          });
+          upRes.resume(); // 丢弃本次响应体
+          retryTimer = setTimeout(send, retry.backoffMs * attempt);
+          return;
+        }
+
+        const outHeaders = forwardHeaders(upRes.headers);
+        res.writeHead(status || 502, outHeaders);
+
+        // 只留最后 8KB 用来抠 usage（usage 出现在响应末尾），不缓存完整响应
+        const ct = String(upRes.headers['content-type'] || '');
+        const collect = status < 300 && (ct.includes('json') || ct.includes('event-stream'));
+        let tail = '';
+        upRes.on('data', (c) => {
+          if (collect) tail = (tail + c.toString('utf8')).slice(-8192);
+          res.write(c);
+        });
+        upRes.on('end', () => {
+          res.end();
+          const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
+          recordUsage(provider.id, model, status, ms, usageToTokens(extractUsage(tail)));
+          logRequest({
+            path: req.url.split('?')[0],
+            model: model || '-',
+            provider: provider.id,
+            status,
+            ms,
+            at: started
+          });
+          done();
+        });
+        upRes.on('error', () => {
+          try { res.end(); } catch (_) { /* 已关 */ }
+          done();
+        });
+      });
+
+      // 建连阶段 20s 超时（避免上游不可达时无限等待），拿到响应后放宽为 10 分钟空闲超时（长流式任务）
+      currentReq.setTimeout(20000, () => currentReq.destroy(new Error('连接上游超时(20s)，请检查网络或 baseUrl')));
+      currentReq.on('response', () => {
+        currentReq.setTimeout(10 * 60 * 1000, () => currentReq.destroy(new Error('上游 10 分钟无数据，已中断')));
+      });
+      currentReq.on('error', (err) => {
+        const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
+        if (canRetry()) {
+          // 网络层失败且还没写过任何字节：同样整请求重放
+          recordUsage(provider.id, model, 502, ms, null);
+          logRequest({
+            path: req.url.split('?')[0], model: model || '-', provider: provider.id,
+            status: 502, ms, at: started, error: `连接失败(第 ${attempt} 次)：${err.message}，退避重试`
+          });
+          retryTimer = setTimeout(send, retry.backoffMs * attempt);
+          return;
+        }
+        try {
+          recordUsage(provider.id, model, 502, ms, null);
+          logRequest({
+            path: req.url.split('?')[0], model: model || '-', provider: provider.id,
+            status: 502, ms, at: started, error: err.message
+          });
+          if (!res.headersSent) {
+            sendJson(res, 502, {
+              error: { message: `上游请求失败: ${err.message}`, type: 'gateway_upstream_error', provider: provider.id }
+            });
+          } else {
+            try { res.end(); } catch (_) { /* 已断 */ }
+          }
+        } finally {
+          done();
+        }
+      });
+      currentReq.end(bodyBuf && bodyBuf.length ? bodyBuf : undefined);
+    };
+
+    res.on('close', () => {
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; } // 客户端已走，别再重试
+      if (currentReq && !res.writableEnded) currentReq.destroy();
+      done();
+    });
+
+    send();
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -606,7 +770,11 @@ async function handleAdmin(req, res, pathname, query) {
         requests: recent.length,
         logBytes,
         logs: cfg.logs,
-        logFile: LOG_PATH
+        logFile: LOG_PATH,
+        limits: cfg.limits,
+        lanes: Array.from(provLanes.entries()).map(([id, l]) => ({
+          id, running: l.running, queued: l.queue.length
+        })).filter((l) => l.running > 0 || l.queued > 0)
       },
       providers: cfg.providers.map((p) => ({
         id: p.id, name: p.name, api: p.api, baseUrl: p.baseUrl,
@@ -983,7 +1151,9 @@ function sseWrite(res, event, payload) {
   res.write('event: ' + event + '\ndata: ' + JSON.stringify(payload) + '\n\n');
 }
 
+/** Responses 代理：翻译 + 透传，返回完成 Promise；429/5xx 未写字节前可整请求重放 */
 function handleResponsesProxy(req, res, provider, body, model) {
+  return new Promise((finish) => {
   const started = Date.now();
   const t0 = process.hrtime.bigint();
 
@@ -992,7 +1162,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
     target = new URL(provider.baseUrl);
   } catch (_) {
     sendJson(res, 502, { error: { message: `provider ${provider.id} 的 baseUrl 不合法`, type: 'gateway_config' } });
-    return;
+    return finish();
   }
 
   const { chat, custom } = RSP.toChatRequest(body, model);
@@ -1015,7 +1185,18 @@ function handleResponsesProxy(req, res, provider, body, model) {
 
   const isHttps = target.protocol === 'https:';
   const transport = isHttps ? https : http;
-  const upReq = transport.request({
+  const retry = (cfg.limits && cfg.limits.retry) || LIMIT_DEFAULTS.retry;
+  let attempt = 0;
+  let currentReq = null;
+  let retryTimer = null;
+  let finished = false;
+  const done = () => { if (!finished) { finished = true; finish(); } };
+  const canRetry = () => retry.enabled && attempt < retry.maxAttempts &&
+    !res.headersSent && !res.writableEnded && !res.destroyed;
+
+  const send = () => {
+    attempt++;
+    currentReq = transport.request({
     protocol: target.protocol,
     hostname: target.hostname,
     port: target.port || (isHttps ? 443 : 80),
@@ -1024,6 +1205,16 @@ function handleResponsesProxy(req, res, provider, body, model) {
     headers
   }, (upRes) => {
     const status = upRes.statusCode || 502;
+
+    // 429/5xx：尚未给客户端写过任何字节（SSE 头都还没发），整请求重放
+    if (canRetry() && (status === 429 || status >= 500)) {
+      const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
+      recordUsage(provider.id, model, status, ms, null);
+      logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status, ms, at: started, error: `第 ${attempt} 次尝试 ${status}，${retry.backoffMs * attempt}ms 后重试` });
+      upRes.resume();
+      retryTimer = setTimeout(send, retry.backoffMs * attempt);
+      return;
+    }
 
     if (status >= 400) {
       let err = '';
@@ -1044,6 +1235,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
         } else {
           sendJson(res, status, { error: { message: msg, type: 'upstream_error', provider: provider.id } });
         }
+        done();
       });
       return;
     }
@@ -1059,15 +1251,18 @@ function handleResponsesProxy(req, res, provider, body, model) {
         } catch (e) {
           logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 502, ms, at: started, error: 'bad json' });
           sendJson(res, 502, { error: { message: '上游返回非 JSON: ' + Buffer.concat(chunks).toString('utf8').slice(0, 300), type: 'upstream_bad_body' } });
+          done();
           return;
         }
         logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 200, ms, at: started });
         recordUsage(provider.id, model, 200, ms, usageToTokens(json && json.usage));
         sendJson(res, 200, RSP.chatToResponses(json, model, custom));
+        done();
       });
       upRes.on('error', (e) => {
         if (!res.headersSent) sendJson(res, 502, { error: { message: '上游中断: ' + e.message, type: 'upstream_aborted' } });
         else res.end();
+        done();
       });
       return;
     }
@@ -1115,32 +1310,48 @@ function handleResponsesProxy(req, res, provider, body, model) {
       const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
       logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 200, ms, at: started });
       recordUsage(provider.id, model, 200, ms, usageToTokens(streamUsage));
+      done();
     });
     upRes.on('error', (e) => {
       tr.fail('上游流中断: ' + e.message);
       res.end();
+      done();
     });
   });
 
-  upReq.setTimeout(20000, () => upReq.destroy(new Error('连接上游超时(20s)，请检查网络或 baseUrl')));
-  upReq.on('response', () => {
-    upReq.setTimeout(10 * 60 * 1000, () => upReq.destroy(new Error('上游 10 分钟无数据，已中断')));
+  currentReq.setTimeout(20000, () => currentReq.destroy(new Error('连接上游超时(20s)，请检查网络或 baseUrl')));
+  currentReq.on('response', () => {
+    currentReq.setTimeout(10 * 60 * 1000, () => currentReq.destroy(new Error('上游 10 分钟无数据，已中断')));
   });
-  upReq.on('error', (err) => {
+  currentReq.on('error', (err) => {
     const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
-    logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 502, ms, at: started, error: err.message });
-    if (!res.headersSent) {
-      sendJson(res, 502, { error: { message: `上游请求失败: ${err.message}`, type: 'gateway_upstream_error', provider: provider.id } });
-    } else {
-      res.end();
+    if (canRetry()) {
+      recordUsage(provider.id, model, 502, ms, null);
+      logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 502, ms, at: started, error: `连接失败(第 ${attempt} 次)：${err.message}，退避重试` });
+      retryTimer = setTimeout(send, retry.backoffMs * attempt);
+      return;
+    }
+    try {
+      logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 502, ms, at: started, error: err.message });
+      if (!res.headersSent) {
+        sendJson(res, 502, { error: { message: `上游请求失败: ${err.message}`, type: 'gateway_upstream_error', provider: provider.id } });
+      } else {
+        try { res.end(); } catch (_) { /* 已断 */ }
+      }
+    } finally {
+      done();
     }
   });
 
   res.on('close', () => {
-    if (!res.writableEnded) upReq.destroy();
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    if (currentReq && !res.writableEnded) currentReq.destroy();
+    done();
   });
 
-  upReq.end(payload);
+  currentReq.end(payload);
+  };
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1223,7 +1434,7 @@ const server = http.createServer(async (req, res) => {
     // Responses 协议：上游只支持 chat/completions 时走适配层
     if (parsed && pathname.replace(/\/+$/, '') === '/v1/responses' &&
         !anthropic && picked.provider.upstreamResponses !== true) {
-      return handleResponsesProxy(req, res, picked.provider, parsed, model);
+      return withLane(picked.provider.id, () => handleResponsesProxy(req, res, picked.provider, parsed, model), res);
     }
 
     // 把最终模型名写回请求体：覆盖客户端传的、或客户端压根没传时补上
@@ -1231,8 +1442,11 @@ const server = http.createServer(async (req, res) => {
       parsed.model = upstreamModel;
       bodyBuf = Buffer.from(JSON.stringify(parsed), 'utf8');
     }
-    return proxyRequest(req, res, picked.provider, bodyBuf, model);
+    return withLane(picked.provider.id, () => proxyRequest(req, res, picked.provider, bodyBuf, model), res);
   } catch (e) {
+    if (e && e.code === 'QUEUE_TIMEOUT') {
+      return sendJson(res, 503, { error: { message: e.message, type: 'gateway_queue_timeout' } });
+    }
     if (!res.headersSent) {
       sendJson(res, 500, { error: { message: e.message, type: 'gateway_internal' } });
     } else {

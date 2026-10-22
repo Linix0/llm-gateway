@@ -18,6 +18,8 @@
 - **模型级真实测活**：界面上对单个/全部模型发极小请求（`max_tokens=1`）验证真实可用性，
   串行节流避免触发上游限速，429 单独标记为「限流·未验证」而不是误报失败
 - **用量统计**：按 provider/model 累计请求数、失败率、token（输入/输出）与耗时，界面一目了然
+- **并发队列**：同一上游的请求自动排队串行执行，并发=1 的免费上游不再互撞 429；
+  可选开退避重试（默认关，避免重复计费），只在还没输出任何字节时整请求重放
 
 ```
 Codex / Cursor / SDK
@@ -214,6 +216,29 @@ llm-gateway/
 因此磁盘占用上限约为 `maxSizeKB × (keep + 1)`（默认约 8 MB）。
 界面可一键清空活动日志、下载日志或归档文件。
 
+### 并发与重试（`limits` 段）
+
+```json
+{
+  "limits": {
+    "queue": true,
+    "queueTimeoutMs": 120000,
+    "retry": { "enabled": false, "maxAttempts": 2, "backoffMs": 800 }
+  }
+}
+```
+
+| 字段 | 含义 |
+|---|---|
+| `queue` | 同一 provider 的上游请求串行排队（默认开）。并发=1 的上游（免费档常见）不再互撞 429；不同 provider 之间互不影响 |
+| `queueTimeoutMs` | 排队上限，超出返回 503（默认 120 秒） |
+| `retry.enabled` | 429/5xx/网络错误时整请求重放，**默认关**——重放可能重复计费，自己权衡 |
+| `retry.maxAttempts` | 最多尝试次数（含首次，1–5） |
+| `retry.backoffMs` | 退避基数，第 n 次重试等 `backoffMs × n` |
+
+重试安全边界：只在**尚未给客户端写过任何字节**时重放；一旦开始流式输出绝不重试；
+排队或重试等待期间客户端断开立即取消。改完 `config.json` 用 `POST /api/reload` 热加载。
+
 ## 管理界面
 
 浏览器打开 <http://127.0.0.1:8787/>：
@@ -278,7 +303,7 @@ llm-gateway/
 - `/v1/responses` 默认走「Responses → chat」翻译：message、function call、custom tool（apply_patch）、
   流式增量、usage 都已覆盖；reasoning 内容（`reasoning_content`）不转发，客户端不会看到思维链。
 - Anthropic 请求只发往 anthropic 类上游；如需把 Claude Code 接到 OpenAI 类上游，需要另加一层协议转换。
-- 不做重试：上游返回 4xx/5xx 或 429 时原样透传给客户端，避免重复计费。
+- 默认不重试（可配 `limits.retry` 开启）：重放可能重复计费；开启后也只在尚未输出任何字节时重放，流式一旦开始绝不重试。
 - 不代理 WebSocket；`/v1/responses` 的流式走 SSE，已验证可用。
 - 若某个上游本身支持 `/v1/responses`，在该 provider 里加 `"upstreamResponses": true` 可跳过翻译直接透传。
 

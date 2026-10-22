@@ -5,7 +5,7 @@
 >
 > **维护纪律**：任何改动都必须同步更新本文件的「变更历史」与相关章节，并提交 git。
 
-- 当前版本：**v1.5.0**（见 `package.json`）
+- 当前版本：**v1.6.0**（见 `package.json`）
 - 仓库：https://github.com/Linix0/llm-gateway （Public / main / MIT）
 - 运行时：Node >= 18，**零第三方依赖**（只 `require` 内置模块）
 - 本机路径：`C:\Users\Administrator\WorkBuddy\2026-10-22-14-09-51\llm-gateway`
@@ -86,6 +86,7 @@ graph TB
 | 配置 | `loadCfg()` / `saveCfg()` / `resolveKey()` / `maskKey()` | `saveCfg` 是**原子写**（tmp → .bak → rename） |
 | 日志 | `localIso()` / `rotateLogs()` / `logRequest()` / `logFiles()` | 时间存本地时区 + 毫秒 `at`；超 `maxSizeKB` 轮转 |
 | 用量 | `loadUsage()` / `recordUsage()` / `extractUsage()` / `usageToTokens()` | 从响应尾部 8KB 抠 usage（OpenAI/Anthropic 字段名都兼容）；5s 合并落盘 `data/usage.json` |
+| 并发 | `laneOf()` / `acquireLane()` / `releaseLane()` / `withLane()` | 每 provider 一条串行车道；排队可取消；详见 §7 决策表 |
 | 路由 | `pickProvider()` / `mapModel()` / `resolveTarget()` / `reconcileActiveModel()` | `providerId/modelId` 显式路由优先级最高 |
 | 代理 | `proxyRequest()` / `forwardHeaders()` / `readBody()` | SSE 边收边转；请求体上限 64MB |
 | 适配 | `handleResponsesProxy()` / `sseWrite()` | 调用 `lib/responses-adapter.js` |
@@ -121,6 +122,13 @@ graph TB
   "activeModel": "deepseek-v4.1-flash",
   "modelPolicy": "fixed",           // fixed=忽略客户端模型名 | auto=跟随客户端
   "logs": { "enabled": true, "maxSizeKB": 2048, "keep": 3 },
+  "limits": {
+    "queue": true,              // 同 provider 串行排队（并发=1 的上游不再互撞 429）
+    "queueTimeoutMs": 120000,   // 排队上限，超出返回 503 gateway_queue_timeout（5000–600000）
+    "retry": {                  // 429/5xx/网络错误 的整请求重放，默认关（避免重复计费）
+      "enabled": false, "maxAttempts": 2, "backoffMs": 800
+    }
+  },
   "providers": [{
     "id": "nextapi",
     "name": "NextApi",
@@ -171,7 +179,9 @@ graph TB
 |---|---|---|
 | 零依赖 | 免 `npm install`，拷走即用 | 不要为此引第三方包；要工具函数自己写 |
 | 管理界面单文件内联 | 无构建、无静态资源目录依赖 | CSS 变量定义在 `:root` 与 `[data-theme=light]`，新增颜色必须用变量 |
-| 不做自动重试 | 避免重复计费 | 上游 4xx/5xx/429 原样透传 |
+| 不做自动重试 | 避免重复计费 | v1.6.0 起改为**默认关、可选开**：只在 429/5xx/网络错误且**尚未给客户端写过任何字节**时整请求重放，一旦开始流式输出绝不重试 |
+| 每 provider 串行车道 | 上游普遍"并发=1"，透传会互撞 429 | 车道按 provider 隔离（一个上游卡死不影响别的）；排队中的请求客户端断开会立即取消，不会泄漏车位 |
+| `proxyRequest`/`handleResponsesProxy` 返回 Promise | 供 `withLane` 排队与优雅退出感知完成 | **改这两个函数时必须保证所有分支（end/error/close/重试耗尽）都调用 `done()`**，否则车道永久泄漏——v1.6.0 开发中就因往已销毁的 res 写响应抛异常导致 done 不执行，已用 try/finally + `sendJson` 防御修复 |
 | 日志不记 prompt/key | 安全 | 排障时只能看路径/状态/耗时 |
 | `modelPolicy=fixed` 静默替换模型 | 用户不想在客户端改配置 | 逃生门是 `providerId/modelId` 显式写法 |
 | 时间存本地时区 + `at` 毫秒 | 曾存 UTC 导致界面差 8 小时 | 解析用 `at`，不要用 `ts` 再算 |
@@ -223,6 +233,21 @@ curl --noproxy '*' -X POST http://127.0.0.1:8787/v1/chat/completions \
 ---
 
 ## 9. 变更历史
+
+### v1.6.0 · 请求队列与可选重试
+
+- **每 provider 串行车道**（`limits.queue`，默认开）：同 provider 的上游请求排队执行，
+  并发=1 的上游（如 NextApi 免费档）不再互撞 429；不同 provider 车道互不影响。
+- 排队上限 `limits.queueTimeoutMs`（默认 120s），超出返回 503 `gateway_queue_timeout`；
+  排队期间客户端断开立即取消，不占车位。
+- **可选重试** `limits.retry`（默认关）：仅当 429/5xx/网络错误且**尚未给客户端写过任何字节**
+  时整请求重放（`backoffMs × attempt` 退避）；开始流式输出后绝不重试；客户端断开取消重试。
+- `proxyRequest()` / `handleResponsesProxy()` 改为返回完成 Promise；所有结束分支调用 `done()`。
+- 防御修复：`sendJson()` 对已销毁响应直接返回（曾因往断开的 res 写 502 抛异常，
+  导致车道不释放——这是开发本版本时实测抓到的死锁）。
+- `/api/state` 暴露 `limits` 与实时 `lanes`（每个 provider 的 running/queued）。
+- 实测：并发 2 请求 → 1.5s / 2.86s 双 200（改造前第二个必 429）；
+  断开释放 → lanes 立即清空；重试 → agentrouter 连接失败重放 2 次后 502。
 
 ### v1.5.0 · 用量统计
 
