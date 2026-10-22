@@ -82,30 +82,59 @@
   ::-webkit-scrollbar-thumb:hover { background: var(--line); background-clip: content-box; }
   ::-webkit-scrollbar-track { background: transparent; }
 
-  /* ---------- topbar ---------- */
-  .topbar {
-    position: sticky; top: 0; z-index: 30;
-    display: flex; align-items: center; gap: 12px;
-    height: 58px; padding: 0 22px; border-bottom: 1px solid var(--line-soft);
-    background: color-mix(in srgb, var(--bg) 76%, transparent);
-    backdrop-filter: blur(14px) saturate(160%);
+  /* ---------- 侧边导航布局 ---------- */
+  .layout { display: flex; height: 100vh; }
+  .sidebar {
+    width: 220px; flex: none; display: flex; flex-direction: column; gap: 20px;
+    border-right: 1px solid var(--line-soft);
+    background: color-mix(in srgb, var(--panel) 52%, var(--bg));
+    padding: 20px 12px 16px; position: relative; z-index: 2;
   }
-  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .side-top { display: flex; flex-direction: column; gap: 20px; min-height: 0; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; min-width: 0; }
   .mark {
-    width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center;
+    width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none;
     background: linear-gradient(150deg, var(--accent), var(--accent-deep));
     color: #fff; font-size: 11px; font-weight: 800; letter-spacing: .4px;
     box-shadow: 0 4px 14px -8px var(--accent);
   }
-  .brand h1 { font-size: 14px; font-weight: 620; margin: 0; letter-spacing: .1px; white-space: nowrap; }
+  .brand-txt { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+  .brand h1 { font-size: 14px; font-weight: 640; margin: 0; letter-spacing: .1px; white-space: nowrap; }
   .brand .ver {
     font-family: var(--mono); font-size: 10.5px; color: var(--dim);
-    border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; margin-left: 2px;
+    border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px;
+  }
+
+  .nav { display: flex; flex-direction: column; gap: 3px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px; height: 40px; padding: 0 13px;
+    border: 0; background: transparent; border-radius: var(--r-sm);
+    color: var(--text-2); font-size: 13.5px; font-family: inherit; cursor: pointer;
+    transition: background .13s, color .13s; text-align: left; white-space: nowrap;
+  }
+  .nav-item:hover { background: var(--panel-2); color: var(--text); }
+  .nav-item.on { background: var(--accent-soft); color: var(--accent); font-weight: 620; }
+  .nav-item .ni-ico { width: 18px; text-align: center; opacity: .8; font-size: 13.5px; }
+
+  .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 12px; padding: 0 4px; }
+  .side-status { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .side-meta { font-size: 10.5px; color: var(--dim); line-height: 1.7; font-family: var(--mono); word-break: break-all; }
+  .side-gh { font-size: 11.5px; color: var(--muted); }
+  .side-gh:hover { color: var(--accent); }
+
+  .main { flex: 1; min-width: 0; overflow-y: auto; position: relative; z-index: 1; }
+  .content { max-width: 1240px; margin: 0 auto; padding: 28px 32px 44px; }
+  .page { display: none; flex-direction: column; gap: 20px; }
+  .page.on { display: flex; }
+  .grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+  .col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .content-foot {
+    margin-top: 10px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    color: var(--dim); font-size: 11.5px;
   }
   .grow { flex: 1; }
 
-  .top-right { display: flex; align-items: center; gap: 8px; }
-  .status { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  .status { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 0; overflow: hidden; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: none; }
   .dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
   .dot.off { background: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
@@ -113,47 +142,69 @@
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 
   .model-pill {
-    display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px;
-    border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
+    display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px;
+    width: 100%; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel);
     color: var(--text); font-size: 12.5px; font-family: var(--mono); cursor: pointer;
-    max-width: 260px; white-space: nowrap; transition: border-color .14s, background .14s;
+    white-space: nowrap; transition: border-color .14s, background .14s;
   }
   .model-pill:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); background: var(--panel-2); }
-  .model-pill .lbl { color: var(--dim); font-family: inherit; font-size: 11.5px; }
+  .model-pill .lbl { color: var(--dim); font-family: inherit; font-size: 11.5px; flex: none; }
   .model-pill .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .model-pill .mode {
-    font-family: inherit; font-size: 10px; padding: 0 5px; border-radius: 4px;
+    font-family: inherit; font-size: 10px; padding: 0 5px; border-radius: 4px; flex: none;
     background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
   }
 
   .icon-btn {
-    width: 30px; height: 30px; display: grid; place-items: center; padding: 0;
+    width: 30px; height: 30px; display: grid; place-items: center; padding: 0; flex: none;
     background: transparent; border: 1px solid transparent; border-radius: var(--r-xs);
     color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; transition: all .13s;
   }
   .icon-btn:hover { color: var(--text); background: var(--panel-2); border-color: var(--line); }
   .icon-btn.danger:hover { color: var(--err); background: var(--err-soft); border-color: color-mix(in srgb, var(--err) 28%, transparent); }
 
-  /* ---------- layout ---------- */
-  .shell { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 18px 22px 0; }
-  .grid { display: grid; grid-template-columns: 286px minmax(0, 1fr); gap: 16px; align-items: start; }
-  .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-  @media (max-width: 980px) {
-    .grid { grid-template-columns: minmax(0, 1fr); }
-    .topbar { padding: 0 14px; height: 54px; }
-    .shell { padding: 14px 14px 0; }
-    .brand .ver { display: none; }
-    .model-pill { max-width: 130px; }
+  /* ---------- 帮助释意 ---------- */
+  .help-btn {
+    width: 17px; height: 17px; display: inline-grid; place-items: center; flex: none;
+    border: 1px solid var(--line); border-radius: 50%; background: transparent; padding: 0;
+    color: var(--dim); font-size: 10px; font-weight: 700; cursor: pointer; line-height: 1;
+    font-family: inherit; transition: all .12s; vertical-align: middle;
+  }
+  .help-btn:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+  .help-pop {
+    position: fixed; z-index: 80; max-width: 380px; padding: 14px 16px;
+    background: var(--panel-3); border: 1px solid var(--line); border-radius: var(--r-sm);
+    box-shadow: 0 24px 54px -26px rgba(0,0,0,.9); font-size: 12.5px; line-height: 1.75; color: var(--text-2);
+    animation: tin .15s ease-out;
+  }
+  .help-pop h4 { margin: 0 0 7px; font-size: 13px; color: var(--text); }
+  .help-pop b { color: var(--text); }
+  .help-pop .mono { color: var(--muted); background: var(--panel); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  .help-pop p { margin: 0 0 8px; }
+  .help-pop p:last-child { margin-bottom: 0; }
+
+  @media (max-width: 920px) {
+    .layout { flex-direction: column; height: auto; min-height: 100vh; }
+    .sidebar { width: auto; flex-direction: row; align-items: center; gap: 12px; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--line-soft); }
+    .side-top { flex-direction: row; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+    .nav { flex-direction: row; gap: 2px; overflow-x: auto; }
+    .nav-item { height: 32px; padding: 0 11px; }
+    .nav-item .ni-ico { display: none; }
+    .side-foot { margin: 0; flex-direction: row; align-items: center; gap: 8px; }
+    .model-pill { width: auto; max-width: 150px; }
     .model-pill .lbl { display: none; }
+    .side-meta, .side-gh { display: none; }
+    .main { overflow: visible; }
+    .content { padding: 18px 14px 30px; }
+    .grid { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 640px) {
     .card-head { flex-wrap: wrap; padding: 8px 14px; row-gap: 6px; }
     .card-head .seg { order: 9; }
     .card-head .hint { display: none; }
-    .topbar { gap: 8px; }
     .status #statusText { display: none; }
-    .model-pill { max-width: 108px; padding: 0 8px; gap: 5px; }
-    .model-pill .val { max-width: 62px; }
+    .model-pill { max-width: 120px; padding: 0 8px; gap: 5px; }
+    .brand h1 { font-size: 13px; }
   }
 
   /* ---------- card + collapse ---------- */
@@ -189,7 +240,6 @@
   .prov-tools { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); }
   .prov-list {
     list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 1px;
-    max-height: min(56vh, 520px); overflow-y: auto;
   }
   .prov {
     border-radius: var(--r-xs); border: 1px solid transparent; transition: background .12s, border-color .12s;
@@ -417,7 +467,7 @@
   .log-size .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
   .log-size .bar i.warn { background: var(--warn); }
 
-  .tbl-wrap { overflow-x: auto; max-height: 460px; overflow-y: auto; }
+  .tbl-wrap { overflow-x: auto; max-height: calc(100vh - 250px); min-height: 280px; overflow-y: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 600px; }
   th {
     text-align: left; color: var(--dim); font-weight: 650; padding: 8px 12px; font-size: 10px;
@@ -481,10 +531,6 @@
   .modal p { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
   .modal .m-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; }
 
-  .page-foot {
-    position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 14px 22px 30px;
-    display: flex; gap: 12px; align-items: center; flex-wrap: wrap; color: var(--dim); font-size: 11.5px;
-  }
   kbd {
     font-family: var(--mono); font-size: 10.5px; padding: 1px 5px; border-radius: 4px;
     border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
@@ -493,33 +539,50 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand">
-    <div class="mark">LG</div>
-    <h1>LLM Gateway</h1>
-    <span class="ver" id="verChip">v1.3</span>
-  </div>
-  <div class="grow"></div>
-  <div class="top-right">
-    <span class="status"><span class="dot wait" id="dot"></span><span id="statusText">连接中…</span></span>
-    <button class="model-pill" id="modelPill" title="点击调整当前调用模型">
-      <span class="lbl">模型</span>
-      <span class="val" id="pillModel">—</span>
-      <span class="mode" id="pillMode">固定</span>
-    </button>
-    <button class="icon-btn" id="btnCollapseAll" title="折叠 / 展开全部卡片">⌃</button>
-    <button class="icon-btn" id="btnTheme" title="切换主题">◐</button>
-  </div>
-</header>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="side-top">
+      <div class="brand">
+        <div class="mark">LG</div>
+        <div class="brand-txt">
+          <h1>LLM Gateway</h1>
+          <span class="ver" id="verChip">v1.3</span>
+        </div>
+      </div>
+      <nav class="nav" id="nav">
+        <button class="nav-item on" data-page="overview"><span class="ni-ico">◎</span>总览</button>
+        <button class="nav-item" data-page="providers"><span class="ni-ico">⇄</span>供应商</button>
+        <button class="nav-item" data-page="snippets"><span class="ni-ico">⌗</span>客户端接入</button>
+        <button class="nav-item" data-page="logs"><span class="ni-ico">≡</span>请求日志</button>
+      </nav>
+    </div>
+    <div class="side-foot">
+      <button class="model-pill" id="modelPill" title="当前调用模型，点击调整">
+        <span class="lbl">模型</span>
+        <span class="val" id="pillModel">—</span>
+        <span class="mode" id="pillMode">固定</span>
+      </button>
+      <div class="side-status">
+        <span class="status"><span class="dot wait" id="dot"></span><span id="statusText">连接中…</span></span>
+        <div class="grow"></div>
+        <button class="icon-btn" id="btnTheme" title="切换主题">◐</button>
+      </div>
+      <div class="side-meta" id="footRuntime">—</div>
+      <a class="side-gh" href="https://github.com/Linix0/llm-gateway" target="_blank" rel="noreferrer">GitHub ↗</a>
+    </div>
+  </aside>
 
-<div class="shell">
-  <div class="grid">
+  <main class="main">
+    <div class="content">
 
-    <!-- 左：provider 列表 -->
-    <div class="col">
+      <!-- 页：供应商（列表 + 编辑） -->
+      <section class="page" id="page-providers">
+      <div class="grid">
+      <div class="col">
       <div class="card" id="cardProv">
         <div class="card-head">
           <h2>供应商 <span class="cnt" id="provCount">0</span></h2>
+          <button class="help-btn" data-help="providers" title="这是什么？">?</button>
           <div class="grow"></div>
           <button class="btn ghost sm" id="btnNew">新增</button>
         </div>
@@ -545,31 +608,14 @@
       </div>
     </div>
 
-    <!-- 右：当前调用 + 编辑 + 接入 -->
+    <!-- 编辑器列：供应商页右侧 -->
     <div class="col">
-
-      <div class="card" id="cardRoute" data-cid="route">
-        <div class="card-head clickable" data-toggle="route">
-          <span class="chev">▾</span>
-          <h2>当前调用模型</h2>
-          <div class="grow"></div>
-          <div class="seg" id="policySeg">
-            <button data-p="fixed" title="无论客户端传什么模型名，都用下面选定的模型">网关固定</button>
-            <button data-p="auto" title="按客户端传来的模型名路由">跟随客户端</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="route-body">
-            <select class="route-select" id="modelSelect" aria-label="当前调用模型"></select>
-            <div class="route-meta" id="routeMeta"></div>
-          </div>
-        </div>
-      </div>
 
       <div class="card" id="cardEditor" data-cid="editor">
         <div class="card-head clickable" data-toggle="editor">
           <span class="chev">▾</span>
           <h2 id="formTitle">编辑供应商</h2>
+          <button class="help-btn" data-help="editor" title="这是什么？">?</button>
           <span class="tag warn" id="dirtyTag" hidden>未保存</span>
           <div class="grow"></div>
           <span class="hint mono" id="editorId"></span>
@@ -623,7 +669,9 @@
           <div class="sec" data-sid="models">
             <div class="sec-head" data-sec="models">
               <span class="chev">▾</span>
-              <h3 class="sec-title">模型列表 <span class="cnt" id="modelCount">0</span></h3>
+              <h3 class="sec-title">模型列表 <span class="cnt" id="modelCount">0</span>
+                <button class="help-btn" data-help="models" title="这是什么？">?</button>
+              </h3>
             </div>
             <div class="sec-body">
               <div class="models" id="modelRows"></div>
@@ -649,11 +697,18 @@
         </div>
       </div>
 
-      <!-- 客户端接入 -->
+    </div>
+    </div>
+    </section>
+
+    <!-- 页：客户端接入 -->
+    <section class="page" id="page-snippets">
+
       <div class="card" id="cardSnip" data-cid="snip">
         <div class="card-head clickable" data-toggle="snip">
           <span class="chev">▾</span>
           <h2>客户端接入</h2>
+          <button class="help-btn" data-help="snippets" title="这是什么？">?</button>
           <div class="grow"></div>
           <span class="hint">真实 key 由网关注入</span>
         </div>
@@ -679,16 +734,35 @@
           </div>
         </div>
       </div>
-    </div>
-  </div>
-</div>
+    </section>
 
-<!-- 用量统计 -->
-<div class="shell" style="padding-top:14px">
-  <div class="card" id="cardUsage" data-cid="usage">
+    <!-- 页：总览（当前调用模型 + 用量统计） -->
+    <section class="page on" id="page-overview">
+
+      <div class="card" id="cardRoute" data-cid="route">
+        <div class="card-head clickable" data-toggle="route">
+          <span class="chev">▾</span>
+          <h2>当前调用模型</h2>
+          <button class="help-btn" data-help="route" title="这是什么？">?</button>
+          <div class="grow"></div>
+          <div class="seg" id="policySeg">
+            <button data-p="fixed" title="无论客户端传什么模型名，都用下面选定的模型">网关固定</button>
+            <button data-p="auto" title="按客户端传来的模型名路由">跟随客户端</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="route-body">
+            <select class="route-select" id="modelSelect" aria-label="当前调用模型"></select>
+            <div class="route-meta" id="routeMeta"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="cardUsage" data-cid="usage">
     <div class="card-head clickable" data-toggle="usage">
       <span class="chev">▾</span>
       <h2>用量统计</h2>
+      <button class="help-btn" data-help="usage" title="这是什么？">?</button>
       <div class="grow"></div>
       <span class="hint" id="usageSummary">—</span>
       <button class="btn subtle sm" id="btnUsageClear" title="只清统计，不影响日志与配置">清零</button>
@@ -699,14 +773,15 @@
       <div class="hint" style="margin-top:8px">token 取自上游返回的 usage（流式为最后一个 chunk）；上游没给就只计请求数。</div>
     </div>
   </div>
-</div>
+    </section>
 
-<!-- 请求日志 -->
-<div class="shell" style="padding-top:14px">
-  <div class="card" id="cardLogs" data-cid="logs">
+    <!-- 页：请求日志 -->
+    <section class="page" id="page-logs">
+      <div class="card" id="cardLogs" data-cid="logs">
     <div class="card-head clickable" data-toggle="logs">
       <span class="chev">▾</span>
       <h2>请求日志 <span class="cnt" id="logCount">0</span></h2>
+      <button class="help-btn" data-help="logs" title="这是什么？">?</button>
       <div class="grow"></div>
       <div class="seg" id="logFilter">
         <button class="on" data-f="all">全部</button>
@@ -775,13 +850,14 @@
       </div>
     </div>
   </div>
-</div>
+    </section>
 
-<div class="page-foot">
-  <span id="footRuntime">—</span>
-  <div class="grow"></div>
-  <span><kbd>Ctrl</kbd>+<kbd>S</kbd> 保存</span>
-  <a href="https://github.com/Linix0/llm-gateway" target="_blank" rel="noreferrer">GitHub ↗</a>
+    <div class="content-foot">
+      <span><kbd>Ctrl</kbd>+<kbd>S</kbd> 保存编辑中的供应商</span>
+    </div>
+
+    </div>
+  </main>
 </div>
 
 <div id="toasts"></div>
@@ -941,15 +1017,12 @@ function setDirty(v) {
 let collapsed = new Set();
 (function initCollapse() {
   const raw = localStorage.getItem(LS_COLLAPSE);
-  if (raw === null) collapsed = new Set(['snip']);
+  if (raw === null) collapsed = new Set();
   else { try { collapsed = new Set(JSON.parse(raw)); } catch (_) { collapsed = new Set(); } }
 })();
 
 function applyCollapse() {
   $$('.card[data-cid]').forEach((c) => c.classList.toggle('collapsed', collapsed.has(c.dataset.cid)));
-  const anyOpen = $$('.card[data-cid]').some((c) => !c.classList.contains('collapsed'));
-  $('#btnCollapseAll').textContent = anyOpen ? '⌃' : '⌄';
-  $('#btnCollapseAll').title = anyOpen ? '折叠全部' : '展开全部';
 }
 function toggleCard(id, force) {
   const willCollapse = force === undefined ? !collapsed.has(id) : force;
@@ -965,7 +1038,118 @@ $$('[data-toggle]').forEach((h) => {
   });
 });
 $$('[data-sec]').forEach((h) => {
-  h.addEventListener('click', () => h.closest('.sec').classList.toggle('collapsed'));
+  h.addEventListener('click', (e) => {
+    if (e.target.closest('.help-btn')) return;
+    h.closest('.sec').classList.toggle('collapsed');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 分页导航                                                            */
+/* ------------------------------------------------------------------ */
+const LS_PAGE = 'lg.page';
+
+function showPage(id) {
+  const page = document.getElementById('page-' + id);
+  if (!page) return;
+  $$('.page').forEach((p) => p.classList.toggle('on', p === page));
+  $$('#nav .nav-item').forEach((b) => b.classList.toggle('on', b.dataset.page === id));
+  localStorage.setItem(LS_PAGE, id);
+  if (location.hash !== '#' + id) history.replaceState(null, '', '#' + id);
+  if (id === 'snippets') toggleCard('snip', false); // 片段页独占一屏，默认展开
+  if (helpEl) hideHelp();
+}
+
+$('#nav').addEventListener('click', (e) => {
+  const b = e.target.closest('.nav-item');
+  if (b) showPage(b.dataset.page);
+});
+window.addEventListener('hashchange', () => {
+  const id = location.hash.slice(1);
+  if (id && document.getElementById('page-' + id)) showPage(id);
+});
+
+/* ------------------------------------------------------------------ */
+/* 帮助释意（? 按钮 → 浮层）                                            */
+/* ------------------------------------------------------------------ */
+const HELP = {
+  route: {
+    t: '当前调用模型',
+    b: '<p>决定每个请求<b>实际打到哪个模型</b>。两种策略：</p>' +
+       '<p><b>网关固定</b>：客户端（Codex / Cursor…）里写什么模型名都会被替换成这里选的模型。换模型只需要在网关上点一下，客户端完全不用改。<br />' +
+       '<b>跟随客户端</b>：按客户端传来的模型名路由，匹配不到时用这里的设置兜底。</p>' +
+       '<p>例外：模型名写成 <span class="mono">providerId/modelId</span>（如 <span class="mono">nextapi/deepseek-v4.1-flash</span>）时，无论哪种策略都会精确路由到指定供应商的指定模型。</p>'
+  },
+  providers: {
+    t: '供应商（Provider）',
+    b: '<p>一个供应商 = 一家上游服务（中转站、官方 API、自建服务…），包含地址、协议、key 和模型清单。</p>' +
+       '<p>点击列表项可在右侧编辑；<b>当前</b> 标签表示请求默认走它。展开箭头可看它下面的模型，芯片颜色是上次测活结果：绿 = 可用、黄 = 限流未验证、红 = 不可用。</p>' +
+       '<p>「全部测连接」只验证地址与 key（查模型列表）；「测所有模型」会真实调用每个模型验证可用性。</p>'
+  },
+  editor: {
+    t: '编辑供应商',
+    b: '<p>修改选中供应商的配置，改完记得点 <b>保存</b>（或 <span class="mono">Ctrl+S</span>）。</p>' +
+       '<p><b>协议</b>决定转发方式：OpenAI 兼容走 <span class="mono">/v1/chat/completions</span>，Anthropic 走 <span class="mono">/v1/messages</span>。' +
+       'API Key 建议 写 <span class="mono">env:变量名</span>，避免明文 key 存在配置文件里；留空保存不会改动已存的 key。</p>' +
+       '<p>「设为当前」把请求默认切到这个供应商；「测试连接」只验证地址和 key 是否有效。</p>'
+  },
+  models: {
+    t: '模型列表',
+    b: '<p>声明这个供应商提供哪些模型。每行三个字段：</p>' +
+       '<p><b>模型 ID</b>：发给上游的真实模型名（必填）；<b>显示名</b>：只在界面上展示（可选）；<b>上下文</b>：写进 <span class="mono">/v1/models</span> 的 contextWindow，留空用上游默认。</p>' +
+       '<p>⚡ 按钮对这个模型<b>真实测活</b>：发一次 <span class="mono">max_tokens=1</span> 的极小请求（成本可忽略），返回真实可用性；批量测活串行执行，避免触发上游限速。429 只代表限流，不代表模型坏了。</p>'
+  },
+  snippets: {
+    t: '客户端接入',
+    b: '<p>把 Codex / Cursor / Claude Code 等客户端指向本网关的配置片段，选好客户端类型后一键复制粘贴即可。</p>' +
+       '<p>片段里的 key 统一填 <span class="mono">local</span> 占位：<b>真实 key 由网关在转发时注入</b>，客户端本机不保存任何密钥，换上游也不用动客户端。</p>'
+  },
+  usage: {
+    t: '用量统计',
+    b: '<p>按 供应商/模型 累计的请求数、失败数、输入/输出 token 和平均耗时，数据来自上游返回的 usage 字段（流式取最后一个 chunk），每 5 秒落盘一次。</p>' +
+       '<p>用途：观察哪个模型用得最多、失败率是否异常、测活等操作消耗了多少 token。「清零」只清统计数字，不影响日志和配置。</p>'
+  },
+  logs: {
+    t: '请求日志',
+    b: '<p>经过网关的每个请求一行：状态码、供应商、模型、路径、耗时、时间。点「策略」可配置日志轮转（单文件上限 / 保留归档份数），超限自动滚动，不会无限增长。</p>' +
+       '<p>默认 4 秒自动刷新，可关闭。排查问题时切「仅失败」快速看错误请求；错误详情在 <span class="mono">data/requests.log</span> 的 JSONL 里。</p>'
+  }
+};
+
+let helpEl = null;
+
+function hideHelp() {
+  if (helpEl) { helpEl.remove(); helpEl = null; }
+}
+
+function showHelp(key, anchor) {
+  hideHelp();
+  const h = HELP[key];
+  if (!h) return;
+  helpEl = document.createElement('div');
+  helpEl.className = 'help-pop';
+  helpEl.innerHTML = `<h4>${h.t}</h4>${h.b}`;
+  document.body.appendChild(helpEl);
+  const r = anchor.getBoundingClientRect();
+  const w = helpEl.offsetWidth;
+  const hh = helpEl.offsetHeight;
+  let x = Math.max(12, Math.min(r.left, window.innerWidth - w - 12));
+  let y = r.bottom + 9;
+  if (y + hh > window.innerHeight - 12) y = Math.max(12, r.top - hh - 9);
+  helpEl.style.left = x + 'px';
+  helpEl.style.top = y + 'px';
+}
+
+$$('.help-btn').forEach((b) => {
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (helpEl && helpEl.dataset.k === b.dataset.help) { hideHelp(); return; }
+    showHelp(b.dataset.help, b);
+    helpEl.dataset.k = b.dataset.help;
+  });
+});
+document.addEventListener('click', (e) => {
+  if (helpEl && !e.target.closest('.help-pop') && !e.target.closest('.help-btn')) hideHelp();
 });
 
 /* ------------------------------------------------------------------ */
@@ -1464,9 +1648,9 @@ $('#btnSave').onclick = save;
 $('#btnNew').onclick = newProvider;
 
 $('#modelPill').onclick = () => {
+  showPage('overview');
   toggleCard('route', false);
-  $('#cardRoute').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  setTimeout(() => $('#modelSelect').focus(), 260);
+  setTimeout(() => $('#modelSelect').focus(), 80);
 };
 
 $('#modelSelect').addEventListener('change', async (e) => {
@@ -1819,13 +2003,6 @@ $('#btnTheme').onclick = () => {
   localStorage.setItem(LS_THEME, next);
 };
 
-$('#btnCollapseAll').onclick = () => {
-  const anyOpen = $$('.card[data-cid]').some((c) => !c.classList.contains('collapsed'));
-  collapsed = new Set(anyOpen ? $$('.card[data-cid]').map((c) => c.dataset.cid) : []);
-  localStorage.setItem(LS_COLLAPSE, JSON.stringify(Array.from(collapsed)));
-  applyCollapse();
-};
-
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
     e.preventDefault();
@@ -1848,6 +2025,9 @@ window.addEventListener('beforeunload', (e) => {
   const auto = localStorage.getItem(LS_AUTO) !== '0';
   $('#autoRefresh').checked = auto;
   applyCollapse();
+
+  const savedPage = location.hash.slice(1) || localStorage.getItem(LS_PAGE);
+  if (savedPage && document.getElementById('page-' + savedPage)) showPage(savedPage);
 
   load().catch(() => {
     $('#dot').className = 'dot off';

@@ -5,7 +5,7 @@
 >
 > **维护纪律**：任何改动都必须同步更新本文件的「变更历史」与相关章节，并提交 git。
 
-- 当前版本：**v1.7.0**（见 `package.json`）
+- 当前版本：**v1.8.0**（见 `package.json`）
 - 仓库：https://github.com/Linix0/llm-gateway （Public / main / MIT）
 - 运行时：Node >= 18，**零第三方依赖**（只 `require` 内置模块）
 - 本机路径：`C:\Users\Administrator\WorkBuddy\2026-10-22-14-09-51\llm-gateway`
@@ -72,7 +72,7 @@ graph TB
 |---|---|---|---|
 | `server.js` | ~1140 | 全部服务端逻辑：配置、路由、代理、适配调度、管理 API、日志 | 已偏大，新增模块优先放 `lib/` |
 | `lib/responses-adapter.js` | ~490 | Responses ⇄ chat/completions 双向翻译；导出 `toChatRequest` / `chatToResponses` / `streamChatToResponses` | 改流式事件序列时，务必用真实 `codex exec` 验证 |
-| `public/index.html` | ~1750 | 单文件管理界面（HTML+CSS+JS 全内联，无构建） | 主题用 CSS 变量；新增卡片要带 `data-cid` 以接入折叠体系 |
+| `public/index.html` | ~1900 | 单文件管理界面（HTML+CSS+JS 全内联，无构建）。**侧边导航布局**：左栏 `.sidebar`（品牌/导航/状态/模型胶囊），右栏 `.main` 内四个分页 `.page#page-{overview,providers,snippets,logs}`，由 `showPage(id)` 切换（localStorage + URL hash 记忆）。帮助释意 = 标题旁 `.help-btn`（data-help）→ `HELP` 映射 → 全局浮层 `.help-pop` | 主题用 CSS 变量；新增卡片要带 `data-cid` 以接入折叠体系；新增分页要同时加导航项和 `.page` 段 |
 | `data/config.json` | — | 运行配置（**gitignore，含明文 key**） | 只能由 `saveCfg()` 写，勿手改（会被原子写覆盖） |
 | `data/config.example.json` | — | 脱敏样例，入库 | 新增配置字段时**必须同步** |
 | `data/requests.log[.N]` | — | JSONL 请求日志，按大小轮转 | gitignore |
@@ -210,7 +210,7 @@ graph TB
 |---|---|
 | 加一个新 provider | 界面「新增」即可；或改 `config.json` 后 `POST /api/reload`。改端口需重启 |
 | 加一个管理 API | 在 `handleAdmin()` 的 `if` 链里加一段，返回用 `sendJson()`；同步本文件 §6 与 README |
-| 加一个界面分区 | 复制 `.card` 结构并带 `data-cid`，即自动接入折叠/持久化；主题色用变量 |
+| 加一个界面分区 | 复制 `.card` 结构并带 `data-cid`，即自动接入折叠/持久化；主题色用变量；如需独立成页，在 `#nav` 加 `data-page` 项并放 `.page` 段 |
 | 新增加密/鉴权 | 在 `createServer` 入口做，注意别拦 `/healthz` |
 | 拆 `server.js` | 按 §3 区块拆到 `lib/`，`require` 进来；保持零依赖 |
 | 改 Responses 适配 | 改 `lib/responses-adapter.js`，用真实 `codex exec` 验证（纯对话 + apply_patch 工具调用两条路径） |
@@ -237,6 +237,19 @@ curl --noproxy '*' -X POST http://127.0.0.1:8787/v1/chat/completions \
 ---
 
 ## 9. 变更历史
+
+### v1.8.0 · 侧边导航布局、功能释意与 README 规范化
+
+- **界面重构**：顶部栏 + 单页堆叠卡片 → 侧边导航布局。左栏 `.sidebar`（品牌、导航、状态、模型胶囊、
+  版本信息），右栏 `.main` 占满视口，四个分页：总览（当前调用模型 + 用量统计）、供应商（列表 + 编辑器）、
+  客户端接入、请求日志。`showPage(id)` 切换，localStorage + URL hash（`#providers` 等）记忆，支持深链接。
+- **功能释意**：卡片/区块标题旁新增 `.help-btn`（?），点击弹出 `.help-pop` 浮层解释该功能；
+  内容在 `HELP` 映射里（route/providers/editor/models/snippets/usage/logs 共 7 条）。
+- 布局细节：供应商列表不再限高（`max-height:none`）；日志表 `max-height: calc(100vh-250px)` 撑满视口；
+  内容区 max-width 1240px；≤920px 时侧边栏变顶部横排导航（`.nav` 可横向滚动）。
+- 移除「全部折叠」按钮（分页后不再需要）；默认折叠集不再含 snip（接入页独占一屏，进入时强制展开）。
+- **README 重写为开源项目规范**：去掉本机专属内容（"当前机器上的配置"、具体模型清单、本机路径），
+  改为 特性/快速开始/接入客户端/配置/自启/API/项目结构/已知限制/License 结构，补 shields 徽章。
 
 ### v1.7.0 · 测活结果持久化与定时自动测活
 
