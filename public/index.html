@@ -364,6 +364,43 @@
   .mstate.rate { color: var(--warn); }
   .mstate.bad { color: var(--err); }
   .mstate.load { color: var(--muted); }
+  /* ---------- 策略页 ---------- */
+  .arow { display: grid; grid-template-columns: minmax(0, 150px) minmax(0, 1fr) 26px; gap: 6px; align-items: center; margin-bottom: 6px; }
+  @media (max-width: 640px) {
+    .arow { grid-template-columns: minmax(0, 1fr) 26px; }
+    .arow input.aname { grid-column: 1 / -1; }
+  }
+  .fb-pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 2px; }
+  .fb-chip {
+    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
+    color: var(--muted); font-size: 12px; cursor: pointer; transition: all .13s;
+  }
+  .fb-chip:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); color: var(--text); }
+  .fb-chip.on { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }
+  .fb-chip .ord {
+    display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+  }
+  .fb-chip.cur { opacity: .55; cursor: default; }
+  .kinds { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 4px; }
+  .kinds label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .kinds input { width: 14px; height: 14px; accent-color: var(--accent); }
+  .bud-bar { height: 6px; border-radius: 999px; background: var(--panel-2); overflow: hidden; margin-top: 5px; }
+  .bud-bar i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+  .bud-bar i.warn { background: var(--warn); }
+  .bud-bar i.over { background: var(--err); }
+  .bud-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 7px; }
+  .bud-row .val { font-family: var(--mono); color: var(--text); }
+  .circ-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .circ-item {
+    display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted);
+    padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--r-xs); background: var(--panel);
+  }
+  .circ-item .nm { font-family: var(--mono); color: var(--text); }
+  .circ-item.open { border-color: color-mix(in srgb, var(--err) 40%, transparent); background: var(--err-soft); }
+  .circ-item.open .nm { color: var(--err); }
+
   .mrow.testing { opacity: .65; }
 
   /* 用量统计卡片 */
@@ -552,6 +589,7 @@
       <nav class="nav" id="nav">
         <button class="nav-item on" data-page="overview"><span class="ni-ico">◎</span>总览</button>
         <button class="nav-item" data-page="providers"><span class="ni-ico">⇄</span>供应商</button>
+        <button class="nav-item" data-page="policy"><span class="ni-ico">⚙</span>策略</button>
         <button class="nav-item" data-page="snippets"><span class="ni-ico">⌗</span>客户端接入</button>
         <button class="nav-item" data-page="logs"><span class="ni-ico">≡</span>请求日志</button>
       </nav>
@@ -699,6 +737,163 @@
 
     </div>
     </div>
+    </section>
+
+    <!-- 页：策略（别名 / 降级 / 预算 / 熔断） -->
+    <section class="page" id="page-policy">
+      <div class="grid">
+      <div class="col">
+
+        <div class="card" id="cardAlias" data-cid="alias">
+          <div class="card-head clickable" data-toggle="alias">
+            <span class="chev">▾</span>
+            <h2>模型别名 <span class="cnt" id="aliasCount">0</span></h2>
+            <button class="help-btn" data-help="alias" title="这是什么？">?</button>
+            <div class="grow"></div>
+            <button class="btn subtle sm" id="btnAliasSave">保存</button>
+          </div>
+          <div class="card-body">
+            <div id="aliasRows"></div>
+            <button class="add-model" id="btnAliasAdd">+ 添加别名</button>
+            <div class="hint" style="margin-top:8px">
+              目标填 <span class="mono">供应商ID/模型ID</span> 可精确路由，或只填模型名按正常规则匹配。
+            </div>
+            <div class="actions"><span class="result" id="aliasResult"></span></div>
+          </div>
+        </div>
+
+        <div class="card" id="cardFallback" data-cid="fallback">
+          <div class="card-head clickable" data-toggle="fallback">
+            <span class="chev">▾</span>
+            <h2>失败降级</h2>
+            <button class="help-btn" data-help="fallback" title="这是什么？">?</button>
+            <div class="grow"></div>
+            <label class="switch" title="主供应商失败时自动换下一家">
+              <input type="checkbox" id="fbEnabled" />
+              <span class="track"></span>
+              启用
+            </label>
+            <button class="btn subtle sm" id="btnFbSave">保存</button>
+          </div>
+          <div class="card-body">
+            <label class="f">备用供应商 <span class="opt">点击选择，数字为降级顺序</span></label>
+            <div class="fb-pick" id="fbPick"></div>
+            <div class="hint" style="margin-top:6px">未列出的供应商即当前默认供应商（请求首先走它）。</div>
+
+            <div class="row" style="margin-top:12px">
+              <div>
+                <label class="f" for="fbHops">单次请求最多降级次数</label>
+                <select id="fbHops">
+                  <option value="1">1 次</option>
+                  <option value="2">2 次</option>
+                  <option value="3">3 次</option>
+                </select>
+              </div>
+              <div>
+                <label class="f">触发降级的错误</label>
+                <div class="kinds" id="fbKinds">
+                  <label><input type="checkbox" value="rate" />限流 429</label>
+                  <label><input type="checkbox" value="upstream" />上游故障 5xx</label>
+                  <label><input type="checkbox" value="net" />网络/超时</label>
+                  <label><input type="checkbox" value="auth" />无权限 401/403</label>
+                  <label><input type="checkbox" value="missing" />模型不存在 404</label>
+                </div>
+              </div>
+            </div>
+
+            <div id="fbModelMap" style="margin-top:12px"></div>
+            <div class="actions">
+              <button class="btn ghost sm" id="btnFbReset">复位熔断</button>
+              <span class="result" id="fbResult"></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="col">
+
+        <div class="card" id="cardBudget" data-cid="budget">
+          <div class="card-head clickable" data-toggle="budget">
+            <span class="chev">▾</span>
+            <h2>每日预算</h2>
+            <button class="help-btn" data-help="budget" title="这是什么？">?</button>
+            <div class="grow"></div>
+            <label class="switch" title="按天统计用量并可超限拒绝">
+              <input type="checkbox" id="budEnabled" />
+              <span class="track"></span>
+              启用
+            </label>
+            <button class="btn subtle sm" id="btnBudSave">保存</button>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div>
+                <label class="f" for="budReq">每日请求数 <span class="opt">0 = 不限</span></label>
+                <input id="budReq" class="mono" inputmode="numeric" placeholder="0" />
+              </div>
+              <div>
+                <label class="f" for="budHour">每日重置时刻 <span class="opt">本地时区</span></label>
+                <input id="budHour" class="mono" inputmode="numeric" placeholder="4" />
+              </div>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <div>
+                <label class="f" for="budPrompt">输入 token 上限</label>
+                <input id="budPrompt" class="mono" inputmode="numeric" placeholder="0" />
+              </div>
+              <div>
+                <label class="f" for="budComp">输出 token 上限</label>
+                <input id="budComp" class="mono" inputmode="numeric" placeholder="0" />
+              </div>
+            </div>
+            <div style="margin-top:10px">
+              <label class="f">超限时</label>
+              <div class="seg" id="budAction">
+                <button data-a="warn">仅告警</button>
+                <button data-a="reject">拒绝请求</button>
+              </div>
+            </div>
+            <div id="budToday" style="margin-top:12px"></div>
+            <div class="actions">
+              <button class="btn ghost sm" id="btnBudReset">今日清零</button>
+              <span class="result" id="budResult"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="cardCircuit" data-cid="circuit">
+          <div class="card-head clickable" data-toggle="circuit">
+            <span class="chev">▾</span>
+            <h2>熔断保护</h2>
+            <button class="help-btn" data-help="circuit" title="这是什么？">?</button>
+            <div class="grow"></div>
+            <label class="switch" title="连续失败到阈值后短路该供应商一段时间">
+              <input type="checkbox" id="cirEnabled" />
+              <span class="track"></span>
+              启用
+            </label>
+            <button class="btn subtle sm" id="btnCirSave">保存</button>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div>
+                <label class="f" for="cirThreshold">连续失败几次后熔断</label>
+                <input id="cirThreshold" class="mono" inputmode="numeric" placeholder="5" />
+              </div>
+              <div>
+                <label class="f" for="cirCooldown">冷却时长 <span class="opt">秒</span></label>
+                <input id="cirCooldown" class="mono" inputmode="numeric" placeholder="60" />
+              </div>
+            </div>
+            <label class="f" style="margin-top:10px">当前状态</label>
+            <div class="circ-list" id="circuitList"></div>
+            <div class="hint" style="margin-top:8px">熔断中的供应商会被降级链跳过，冷却结束后自动恢复。</div>
+            <div class="actions"><span class="result" id="cirResult"></span></div>
+          </div>
+        </div>
+
+      </div>
+      </div>
     </section>
 
     <!-- 页：客户端接入 -->
@@ -1113,6 +1308,31 @@ const HELP = {
     t: '请求日志',
     b: '<p>经过网关的每个请求一行：状态码、供应商、模型、路径、耗时、时间。点「策略」可配置日志轮转（单文件上限 / 保留归档份数），超限自动滚动，不会无限增长。</p>' +
        '<p>默认 4 秒自动刷新，可关闭。排查问题时切「仅失败」快速看错误请求；错误详情在 <span class="mono">data/requests.log</span> 的 JSONL 里。</p>'
+  },
+  alias: {
+    t: '模型别名',
+    b: '<p>给模型起一个固定的短名字，客户端只写别名，真实模型在网关上随时换。</p>' +
+       '<p>例如 <span class="mono">fast</span> → <span class="mono">nextapi/deepseek-v4.1-flash</span>、<span class="mono">smart</span> → <span class="mono">openrouter/anthropic/claude-sonnet-4.5</span>；' +
+       '以后想换模型只改别名指向，客户端配置一行都不用动。</p>' +
+       '<p>目标写 <span class="mono">供应商ID/模型ID</span> 可精确指定上游，只写模型名则按正常规则匹配。</p>'
+  },
+  fallback: {
+    t: '失败降级',
+    b: '<p>主供应商失败时自动换下一家重试，避免一个上游限流就把整个客户端卡住。</p>' +
+       '<p><b>备用供应商</b>按点击顺序排优先级；<b>最多降级次数</b>限制单个请求尝试几个供应商；' +
+       '<b>触发条件</b>决定哪些错误值得换一家（限流、上游故障、网络超时等）。参数错误 400 不会降级——换一家也一样。</p>' +
+       '<p>降级时模型名按「同名模型 → 下面指定的映射 → 该供应商第一个模型」决定。注意降级会产生额外的上游调用。</p>'
+  },
+  budget: {
+    t: '每日预算',
+    b: '<p>按天统计请求数与输入/输出 token，到达上限后<b>仅告警</b>或<b>直接拒绝</b>请求（拒绝时返回 429）。</p>' +
+       '<p>每天在设定的时刻（默认凌晨 4 点，本地时区）自动开启新一天。填 0 表示该项不限。</p>' +
+       '<p>用途：防止脚本失控烧额度、测活与自动巡检的消耗心里有数。「今日清零」只重置当天计数。</p>'
+  },
+  circuit: {
+    t: '熔断保护',
+    b: '<p>某个供应商连续失败到设定次数后，短时间内直接跳过它，不再让每个请求白等超时。</p>' +
+       '<p>熔断中的供应商会被降级链自动跳过；冷却结束后首次成功即清零计数。适合上游整段不可用、或 key 失效时快速失败而不是拖慢整个客户端。</p>'
   }
 };
 
@@ -1330,6 +1550,193 @@ function setModelRows(models) {
 }
 
 /* ------------------------------------------------------------------ */
+/* 策略：别名 / 降级 / 预算 / 熔断                                      */
+/* ------------------------------------------------------------------ */
+
+let fbOrder = [];
+let policyReady = false;
+
+/* ---- 别名 ---- */
+
+function addAliasRow(name, target) {
+  const row = document.createElement('div');
+  row.className = 'arow';
+  row.innerHTML = `
+    <input class="aname mono" placeholder="别名，如 fast" value="${escapeHtml(name || '')}" autocomplete="off" spellcheck="false" />
+    <input class="atarget mono" placeholder="供应商ID/模型ID 或 模型名" value="${escapeHtml(target || '')}" autocomplete="off" spellcheck="false" />
+    <button class="icon-btn danger" title="删除这一行" aria-label="删除这一行" style="width:26px;height:26px;font-size:11px">✕</button>`;
+  row.querySelector('.icon-btn.danger').onclick = () => {
+    row.remove();
+    if (!$$('#aliasRows .arow').length) addAliasRow();
+    updateAliasCount();
+  };
+  $('#aliasRows').appendChild(row);
+  updateAliasCount();
+}
+
+function updateAliasCount() {
+  const rows = $$('#aliasRows .arow');
+  const n = rows.filter((r) => r.querySelector('.aname').value.trim()).length;
+  $('#aliasCount').textContent = n;
+}
+
+function aliasesFromRows() {
+  const out = {};
+  $$('#aliasRows .arow').forEach((r) => {
+    const k = r.querySelector('.aname').value.trim();
+    const v = r.querySelector('.atarget').value.trim();
+    if (k && v) out[k] = v;
+  });
+  return out;
+}
+
+function setAliasRows(aliases) {
+  const box = $('#aliasRows');
+  box.innerHTML = '';
+  const entries = Object.entries(aliases || {});
+  if (!entries.length) addAliasRow();
+  else entries.forEach(([k, v]) => addAliasRow(k, v));
+  updateAliasCount();
+}
+
+/* ---- 降级链 ---- */
+
+function renderFbPick() {
+  const box = $('#fbPick');
+  box.innerHTML = '';
+  (state.providers || []).forEach((p) => {
+    const isCur = p.id === state.active;
+    const idx = fbOrder.indexOf(p.id);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'fb-chip' + (idx >= 0 ? ' on' : '') + (isCur ? ' cur' : '');
+    b.innerHTML = (idx >= 0 ? `<span class="ord">${idx + 1}</span>` : '') +
+      escapeHtml(p.id) + (isCur ? ' · 当前' : '');
+    if (!isCur) {
+      b.onclick = () => {
+        const i = fbOrder.indexOf(p.id);
+        if (i >= 0) fbOrder.splice(i, 1);
+        else fbOrder.push(p.id);
+        renderFbPick();
+        renderFbModelMap();
+        $('#fbResult').textContent = '未保存';
+      };
+    }
+    box.appendChild(b);
+  });
+  if (!(state.providers || []).length) {
+    box.innerHTML = '<span class="hint">还没有供应商，先去「供应商」页添加。</span>';
+  }
+}
+
+function renderFbModelMap() {
+  const box = $('#fbModelMap');
+  box.innerHTML = '';
+  if (!fbOrder.length) return;
+  const title = document.createElement('label');
+  title.className = 'f';
+  title.innerHTML = '降级时使用的模型 <span class="opt">留空则自动选：同名模型 → 该供应商第一个模型</span>';
+  box.appendChild(title);
+  fbOrder.forEach((pid) => {
+    const p = (state.providers || []).find((x) => x.id === pid);
+    if (!p) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'arow';
+    wrap.style.gridTemplateColumns = 'minmax(0,150px) minmax(0,1fr)';
+    const map = (state.fallback && state.fallback.modelMap) || {};
+    wrap.innerHTML =
+      `<input class="mono" value="${escapeHtml(pid)}" disabled />` +
+      `<input class="fbmap mono" data-pid="${escapeHtml(pid)}" placeholder="模型 ID（可选）" value="${escapeHtml(map[pid] || '')}" autocomplete="off" spellcheck="false" />`;
+    box.appendChild(wrap);
+  });
+}
+
+/* ---- 预算 ---- */
+
+function renderBudgetInputs() {
+  const b = state.budget || {};
+  $('#budEnabled').checked = !!b.enabled;
+  $('#budReq').value = b.dailyRequests || 0;
+  $('#budPrompt').value = b.dailyPromptTokens || 0;
+  $('#budComp').value = b.dailyCompletionTokens || 0;
+  $('#budHour').value = b.resetHour == null ? 4 : b.resetHour;
+  $$('#budAction button').forEach((btn) => btn.classList.toggle('on', btn.dataset.a === (b.action || 'warn')));
+}
+
+function renderBudgetToday() {
+  const bs = state.budgetState;
+  const box = $('#budToday');
+  if (!bs) { box.innerHTML = ''; return; }
+  const limit = bs.limits || {};
+  const t = bs.today || {};
+  const rows = [
+    ['请求数', t.requests || 0, limit.requests || 0],
+    ['输入 token', t.prompt || 0, limit.prompt || 0],
+    ['输出 token', t.completion || 0, limit.completion || 0]
+  ];
+  box.innerHTML = `<label class="f">今日用量 <span class="opt">${escapeHtml(bs.day || '')} · 每天 ${bs.resetHour}:00 重置</span></label>` +
+    rows.map(([label, val, lim]) => {
+      const pct = lim > 0 ? Math.min(100, Math.round((val / lim) * 100)) : 0;
+      const cls = lim > 0 && val >= lim ? 'over' : (lim > 0 && pct >= 80 ? 'warn' : '');
+      const limTxt = lim > 0 ? ' / ' + fmtNum(lim) : ' · 不限';
+      return `<div class="bud-row"><span>${label}</span><span class="val">${fmtNum(val)}${limTxt}</span></div>` +
+        (lim > 0 ? `<div class="bud-bar"><i class="${cls}" style="width:${pct}%"></i></div>` : '');
+    }).join('') +
+    (bs.enabled && bs.exceeded
+      ? `<div class="hint" style="margin-top:6px;color:var(--warn)">已超限：${escapeHtml((bs.over || []).join(' / '))} · 当前策略「${bs.action === 'reject' ? '拒绝请求' : '仅告警'}」</div>`
+      : '');
+}
+
+/* ---- 熔断 ---- */
+
+function renderCircuitInputs() {
+  const c = state.circuit || {};
+  $('#cirEnabled').checked = c.enabled !== false;
+  $('#cirThreshold').value = c.threshold || 5;
+  $('#cirCooldown').value = Math.round((c.cooldownMs || 60000) / 1000);
+}
+
+function renderCircuitList() {
+  const box = $('#circuitList');
+  const cs = (state.runtime && state.runtime.circuits) || {};
+  const ids = Object.keys(cs);
+  if (!ids.length) {
+    box.innerHTML = '<div class="circ-item"><span>全部正常，暂无失败记录</span></div>';
+    return;
+  }
+  box.innerHTML = ids.map((id) => {
+    const c = cs[id];
+    const txt = c.open
+      ? `已熔断 · ${Math.max(1, Math.ceil((c.openForMs || 0) / 1000))}s 后恢复`
+      : `连续失败 ${c.fails || 0} 次`;
+    return `<div class="circ-item${c.open ? ' open' : ''}">
+      <span class="nm">${escapeHtml(id)}</span><span>${escapeHtml(txt)}</span>
+      <div class="grow"></div>
+      ${c.lastError ? `<span class="hint">${escapeHtml(String(c.lastError).slice(0, 40))}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/** force=true 时用服务端数据覆盖表单（保存后调用）；否则只刷新动态部分，避免打断编辑 */
+function renderPolicy(force) {
+  if (force || !policyReady) {
+    setAliasRows(state.aliases);
+    fbOrder = Array.isArray(state.fallback && state.fallback.order) ? state.fallback.order.slice() : [];
+    $('#fbEnabled').checked = !!(state.fallback && state.fallback.enabled);
+    $('#fbHops').value = String((state.fallback && state.fallback.maxHops) || 1);
+    const kinds = (state.fallback && state.fallback.onKinds) || [];
+    $$('#fbKinds input').forEach((i) => (i.checked = kinds.includes(i.value)));
+    renderFbPick();
+    renderFbModelMap();
+    renderBudgetInputs();
+    renderCircuitInputs();
+    policyReady = true;
+  }
+  renderBudgetToday();
+  renderCircuitList();
+}
+
+/* ------------------------------------------------------------------ */
 /* 表单                                                               */
 /* ------------------------------------------------------------------ */
 function selectProvider(id) {
@@ -1439,6 +1846,7 @@ async function load() {
   $('#footRuntime').textContent =
     `v${rt.version || '—'} · Node ${rt.node || '—'} · PID ${rt.pid || '—'} · 启动于 ${(rt.startedAt || '').replace('T', ' ').slice(0, 19)}`;
   updateSnippets();
+  renderPolicy(false);
   if (isNew) return;
   if (!selId || !s.providers.some((p) => p.id === selId)) {
     const first = s.active || (s.providers[0] && s.providers[0].id);
@@ -1453,6 +1861,113 @@ async function load() {
     }
   }
 }
+
+/* ---- 策略页：保存与操作 ---- */
+
+$('#btnAliasAdd').onclick = () => addAliasRow();
+
+$('#btnAliasSave').onclick = async () => {
+  try {
+    const r = await api('/api/aliases', { method: 'POST', body: JSON.stringify({ aliases: aliasesFromRows() }) });
+    state.aliases = r.aliases;
+    renderPolicy(true);
+    $('#aliasResult').textContent = '已保存';
+    toast('别名已保存', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
+
+$('#btnFbSave').onclick = async () => {
+  const modelMap = {};
+  $$('#fbModelMap .fbmap').forEach((i) => {
+    const v = i.value.trim();
+    if (v) modelMap[i.dataset.pid] = v;
+  });
+  const body = {
+    enabled: $('#fbEnabled').checked,
+    order: fbOrder,
+    maxHops: Number($('#fbHops').value) || 1,
+    onKinds: $$('#fbKinds input').filter((i) => i.checked).map((i) => i.value),
+    modelMap
+  };
+  if (body.enabled && !body.onKinds.length) return toast('至少选一种触发降级的错误', 'err');
+  try {
+    const r = await api('/api/fallback', { method: 'POST', body: JSON.stringify(body) });
+    state.fallback = r.fallback;
+    renderPolicy(true);
+    $('#fbResult').textContent = body.enabled ? '已启用' : '已关闭';
+    toast('降级策略已保存', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
+
+$('#btnFbReset').onclick = async () => {
+  try {
+    await api('/api/circuit', { method: 'POST', body: JSON.stringify({ reset: 'all' }) });
+    await load();
+    toast('熔断已全部复位', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
+
+$$('#budAction button').forEach((b) => {
+  b.onclick = () => $$('#budAction button').forEach((x) => x.classList.toggle('on', x === b));
+});
+
+$('#btnBudSave').onclick = async () => {
+  const onBtn = $$('#budAction button').filter((x) => x.classList.contains('on'))[0];
+  const body = {
+    enabled: $('#budEnabled').checked,
+    dailyRequests: Number($('#budReq').value) || 0,
+    dailyPromptTokens: Number($('#budPrompt').value) || 0,
+    dailyCompletionTokens: Number($('#budComp').value) || 0,
+    resetHour: Math.min(23, Math.max(0, Number($('#budHour').value) || 0)),
+    action: onBtn ? onBtn.dataset.a : 'warn'
+  };
+  try {
+    const r = await api('/api/budget', { method: 'POST', body: JSON.stringify(body) });
+    state.budget = r.budget;
+    state.budgetState = r.budgetState;
+    renderPolicy(true);
+    $('#budResult').textContent = body.enabled ? '已启用' : '已关闭';
+    toast('预算已保存', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
+
+$('#btnBudReset').onclick = async () => {
+  try {
+    const r = await api('/api/budget', { method: 'POST', body: JSON.stringify({ resetToday: true }) });
+    state.budgetState = r.budgetState;
+    renderBudgetToday();
+    toast('今日计数已清零', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
+
+$('#btnCirSave').onclick = async () => {
+  const body = {
+    enabled: $('#cirEnabled').checked,
+    threshold: Number($('#cirThreshold').value) || 5,
+    cooldownMs: (Number($('#cirCooldown').value) || 60) * 1000
+  };
+  try {
+    const r = await api('/api/circuit', { method: 'POST', body: JSON.stringify(body) });
+    state.circuit = r.circuit;
+    state.runtime = state.runtime || {};
+    state.runtime.circuits = r.circuits;
+    renderPolicy(true);
+    $('#cirResult').textContent = body.enabled ? '已启用' : '已关闭';
+    toast('熔断配置已保存', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
 
 async function save() {
   const body = collectForm();

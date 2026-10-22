@@ -12,6 +12,23 @@
     "keep": 3
   },
   "autoTest": { "enabled": false, "intervalHours": 24 },
+  "aliases": { "fast": "example/example-model" },
+  "fallback": {
+    "enabled": false,
+    "order": [],
+    "maxHops": 1,
+    "onKinds": ["rate", "upstream", "net"],
+    "modelMap": {}
+  },
+  "budget": {
+    "enabled": false,
+    "dailyRequests": 0,
+    "dailyPromptTokens": 0,
+    "dailyCompletionTokens": 0,
+    "action": "warn",
+    "resetHour": 4
+  },
+  "circuit": { "enabled": true, "threshold": 5, "cooldownMs": 60000 },
   "limits": {
     "queue": true,
     "queueTimeoutMs": 120000,

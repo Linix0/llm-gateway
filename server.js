@@ -66,6 +66,27 @@ const DEFAULT_CFG = {
     queue: true,              // 同 provider 串行排队（上游并发=1 时不再互撞 429）
     queueTimeoutMs: 120000,   // 排队最长等待，超时返回 503
     retry: { enabled: false, maxAttempts: 2, backoffMs: 800 } // 429/5xx 退避重试，默认关（避免重复计费）
+  },
+  aliases: {},                // 客户端模型别名 -> "providerId/modelId" 或 "modelId"
+  fallback: {                 // 主 provider 失败时自动降级到备用 provider
+    enabled: false,
+    order: [],                // 备用 provider id，按优先级排列（不含主 provider）
+    maxHops: 1,               // 单个请求最多降级几次
+    onKinds: ['rate', 'upstream', 'net'], // 触发降级的错误类型
+    modelMap: {}              // providerId -> 该 provider 上使用的模型 id
+  },
+  budget: {                   // 每日预算（本地时区每天 resetHour 点重置）
+    enabled: false,
+    dailyRequests: 0,         // 0 = 不限制
+    dailyPromptTokens: 0,
+    dailyCompletionTokens: 0,
+    action: 'warn',           // warn = 只告警；reject = 超限直接拒绝
+    resetHour: 4
+  },
+  circuit: {                  // 熔断：连续失败 N 次后短路该 provider 一段时间
+    enabled: true,
+    threshold: 5,
+    cooldownMs: 60000
   }
 };
 
@@ -79,6 +100,21 @@ const LIMIT_DEFAULTS = {
   retry: { enabled: false, maxAttempts: 2, backoffMs: 800 }
 };
 
+/** 可触发降级的错误类型（与 testModel 的 kind 口径一致） */
+const DEGRADABLE_KINDS = new Set(['rate', 'upstream', 'net', 'auth', 'missing']);
+const ALL_DEGRADE_KINDS = ['rate', 'upstream', 'net', 'auth', 'missing', 'reject'];
+
+/** HTTP 状态 -> 错误类型 */
+function statusKind(status) {
+  if (status === 429) return 'rate';
+  if (status === 401 || status === 403) return 'auth';
+  if (status === 404) return 'missing';
+  if (status === 400 || status === 422) return 'reject';
+  if (status >= 500) return 'upstream';
+  if (status >= 400) return 'reject';
+  return 'ok';
+}
+
 const clampNum = (v, min, max, fallback) => {
   const n = Number(v);
   if (!isFinite(n)) return fallback;
@@ -91,6 +127,61 @@ const clampNum = (v, min, max, fallback) => {
 
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+}
+
+/* ---- 策略段归一化：aliases / fallback / budget / circuit ---- */
+
+/** 别名：{"fast":"nextapi/deepseek-v4.1-flash"}；值可以是 "providerId/model" 或纯模型名 */
+function normalizeAliases(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw)) {
+    const name = String(k || '').trim();
+    const target = String(v || '').trim();
+    if (name && target) out[name] = target;
+  }
+  return out;
+}
+
+function normalizeFallback(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  const kinds = Array.isArray(r.onKinds)
+    ? r.onKinds.filter((k) => ALL_DEGRADE_KINDS.includes(k))
+    : ['rate', 'upstream', 'net'];
+  const modelMap = {};
+  if (r.modelMap && typeof r.modelMap === 'object') {
+    for (const [k, v] of Object.entries(r.modelMap)) {
+      if (k && v) modelMap[String(k)] = String(v);
+    }
+  }
+  return {
+    enabled: !!r.enabled,
+    order: Array.isArray(r.order) ? r.order.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 20) : [],
+    maxHops: clampNum(r.maxHops, 1, 5, 1),
+    onKinds: kinds.length ? kinds : ['rate', 'upstream', 'net'],
+    modelMap
+  };
+}
+
+function normalizeBudget(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  return {
+    enabled: !!r.enabled,
+    dailyRequests: clampNum(r.dailyRequests, 0, 100000000, 0),
+    dailyPromptTokens: clampNum(r.dailyPromptTokens, 0, 1e12, 0),
+    dailyCompletionTokens: clampNum(r.dailyCompletionTokens, 0, 1e12, 0),
+    action: r.action === 'reject' ? 'reject' : 'warn',
+    resetHour: clampNum(r.resetHour, 0, 23, 4)
+  };
+}
+
+function normalizeCircuit(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  return {
+    enabled: !(r.enabled === false),
+    threshold: clampNum(r.threshold, 2, 100, 5),
+    cooldownMs: clampNum(r.cooldownMs, 5000, 3600000, 60000)
+  };
 }
 
 function loadCfg() {
@@ -122,6 +213,10 @@ function loadCfg() {
         backoffMs: clampNum(((raw.limits || {}).retry || {}).backoffMs, 100, 30000, LIMIT_DEFAULTS.retry.backoffMs)
       }
     },
+    aliases: normalizeAliases(raw.aliases),
+    fallback: normalizeFallback(raw.fallback),
+    budget: normalizeBudget(raw.budget),
+    circuit: normalizeCircuit(raw.circuit),
     providers: Array.isArray(raw.providers) ? raw.providers : []
   };
   cfg.providers.forEach((p) => {
@@ -255,10 +350,11 @@ function loadUsage() {
       since: j.since || null,
       requests: num(j.requests), errors: num(j.errors),
       prompt: num(j.prompt), completion: num(j.completion), ms: num(j.ms),
-      items: j.items && typeof j.items === 'object' ? j.items : {}
+      items: j.items && typeof j.items === 'object' ? j.items : {},
+      today: (j.today && typeof j.today === 'object') ? j.today : null
     };
   } catch (_) {
-    return { since: localIso(new Date()), requests: 0, errors: 0, prompt: 0, completion: 0, ms: 0, items: {} };
+    return { since: localIso(new Date()), requests: 0, errors: 0, prompt: 0, completion: 0, ms: 0, items: {}, today: null };
   }
 }
 
@@ -282,6 +378,44 @@ function scheduleUsageSave() {
   usageTimer = setTimeout(() => { usageTimer = null; if (usageDirty) saveUsage(); }, 5000);
 }
 
+/** 预算日：本地时区每天 resetHour 点为一个新周期（凌晨 4 点前算前一天） */
+function budgetDayKey(now) {
+  const d = new Date((now || new Date()).getTime());
+  if (d.getHours() < cfg.budget.resetHour) d.setDate(d.getDate() - 1);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** 今日累计；跨过 resetHour 自动开新一天 */
+function rollToday() {
+  const key = budgetDayKey();
+  if (!usage.today || usage.today.date !== key) {
+    usage.today = { date: key, requests: 0, errors: 0, prompt: 0, completion: 0 };
+    scheduleUsageSave();
+  }
+  return usage.today;
+}
+
+/** 当前预算状态：今日用量 + 是否超限 + 触发了哪几项 */
+function budgetState() {
+  const b = cfg.budget;
+  const t = rollToday();
+  const over = [];
+  if (b.dailyRequests > 0 && t.requests >= b.dailyRequests) over.push('requests');
+  if (b.dailyPromptTokens > 0 && t.prompt >= b.dailyPromptTokens) over.push('prompt');
+  if (b.dailyCompletionTokens > 0 && t.completion >= b.dailyCompletionTokens) over.push('completion');
+  return {
+    enabled: b.enabled,
+    action: b.action,
+    resetHour: b.resetHour,
+    day: t.date,
+    today: { requests: t.requests, errors: t.errors, prompt: t.prompt, completion: t.completion },
+    limits: { requests: b.dailyRequests, prompt: b.dailyPromptTokens, completion: b.dailyCompletionTokens },
+    over,
+    exceeded: over.length > 0
+  };
+}
+
 function recordUsage(providerId, model, status, ms, u) {
   const ok = status >= 200 && status < 300;
   const p = num(u && u.prompt);
@@ -292,6 +426,12 @@ function recordUsage(providerId, model, status, ms, u) {
   usage.prompt += p;
   usage.completion += c;
   if (!usage.since) usage.since = localIso(new Date());
+
+  const t = rollToday();
+  t.requests++;
+  if (!ok) t.errors++;
+  t.prompt += p;
+  t.completion += c;
 
   const key = `${providerId}||${model || '-'}`;
   const it = usage.items[key] ||
@@ -408,7 +548,8 @@ async function withLane(providerId, fn, res) {
       throw e; // QUEUE_TIMEOUT 等交给外层返回 503
     }
     try {
-      await fn();
+      // 必须把 fn() 的结果返回出去：调用方靠它判断成功/失败（熔断与降级都依赖）
+      return await fn();
     } finally {
       releaseLane(providerId);
     }
@@ -437,6 +578,120 @@ function isAnthropicPath(p) {
 }
 
 /** 是否是模型接口路径（只有这些才会被转发到上游） */
+/* ------------------------------------------------------------------ */
+/* 熔断                                                                */
+/* 某个 provider 连续失败到阈值后短路一段时间，避免每个请求都白等 20s 超时。 */
+/* ------------------------------------------------------------------ */
+
+const circuits = new Map(); // providerId -> { fails, openUntil, lastKind, lastError }
+
+function circuitOf(pid) {
+  let c = circuits.get(pid);
+  if (!c) {
+    c = { fails: 0, openUntil: 0, lastKind: null, lastError: null };
+    circuits.set(pid, c);
+  }
+  return c;
+}
+
+function circuitOpen(pid) {
+  if (!cfg.circuit.enabled) return false;
+  return circuitOf(pid).openUntil > Date.now();
+}
+
+function circuitSnapshot() {
+  const out = {};
+  for (const [pid, c] of circuits.entries()) {
+    if (!c.fails && !c.openUntil) continue;
+    out[pid] = {
+      fails: c.fails,
+      open: c.openUntil > Date.now(),
+      openForMs: Math.max(0, c.openUntil - Date.now()),
+      lastKind: c.lastKind,
+      lastError: c.lastError
+    };
+  }
+  return out;
+}
+
+function noteUpstreamResult(pid, ok, kind, message) {
+  if (!cfg.circuit.enabled) return;
+  const c = circuitOf(pid);
+  if (ok) {
+    c.fails = 0;
+    c.openUntil = 0;
+    c.lastKind = null;
+    c.lastError = null;
+    return;
+  }
+  c.fails++;
+  c.lastKind = kind || null;
+  c.lastError = message || null;
+  if (c.fails >= cfg.circuit.threshold) {
+    c.openUntil = Date.now() + cfg.circuit.cooldownMs;
+    console.log(`[llm-gateway] 熔断 ${pid}：连续失败 ${c.fails} 次，${Math.round(cfg.circuit.cooldownMs / 1000)}s 内不再请求`);
+  }
+}
+
+/** 手动复位某个（或全部）provider 的熔断 */
+function resetCircuit(pid) {
+  if (pid) circuits.delete(pid);
+  else circuits.clear();
+}
+
+/* ------------------------------------------------------------------ */
+/* 别名与降级链                                                        */
+/* ------------------------------------------------------------------ */
+
+/** 客户端模型名 -> 别名目标（可能是 "providerId/model" 或纯模型名） */
+function applyAlias(model) {
+  if (!model || !cfg.aliases) return { model, alias: null };
+  const hit = cfg.aliases[model];
+  if (hit && String(hit).trim()) return { model: String(hit).trim(), alias: model };
+  return { model, alias: null };
+}
+
+/** 降级时模型怎么取：同名优先 → modelMap → 该 provider 第一个模型 → 原名 */
+function resolveFallbackModel(provider, model) {
+  if (!model) return model;
+  if ((provider.models || []).some((m) => m.id === model)) return model;
+  const mapped = cfg.fallback.modelMap[provider.id];
+  if (mapped) return mapped;
+  if (provider.models && provider.models[0]) return provider.models[0].id;
+  return model;
+}
+
+/**
+ * 构造候选 provider 列表：[主, 备用1, 备用2…]
+ * - 客户端显式写 "providerId/model" 时不降级（用户已明确指定）
+ * - 熔断中的 provider 跳过
+ */
+function buildCandidates(primary, explicit) {
+  const hops = cfg.fallback.maxHops || 1;
+  const out = [];
+  // 主供应商熔断中且有备用时，直接让位给备用（这正是熔断的意义）
+  if (!circuitOpen(primary.id)) out.push(primary);
+  if (!cfg.fallback.enabled || explicit) {
+    return out.length ? out : [primary];
+  }
+  for (const id of cfg.fallback.order) {
+    if (out.length > hops) break;
+    if (id === primary.id) continue;
+    const p = cfg.providers.find((x) => x.id === id);
+    if (!p) continue;
+    if (circuitOpen(p.id)) continue;
+    out.push(p);
+  }
+  // 全都熔断时仍然尝试主供应商，保证客户端至少能拿到一个明确错误
+  if (!out.length) out.push(primary);
+  return out.slice(0, hops + 1);
+}
+
+/** 这个错误值不值得换一家再试 */
+function isDegradable(kind) {
+  return DEGRADABLE_KINDS.has(kind) && cfg.fallback.onKinds.includes(kind);
+}
+
 function isModelPath(p) {
   return p.startsWith('/v1') || p.startsWith('/anthropic') ||
     p === '/models' || p === '/chat/completions' || p === '/responses' || p === '/messages';
@@ -491,15 +746,16 @@ function mapModel(provider, model) {
  *    一律用网关注入的「当前调用模型」（active provider + activeModel）
  *  - modelPolicy = "auto"：按客户端模型名匹配 provider，匹配不到回落 active
  */
-function resolveTarget(clientModel, anthropic) {
+function resolveTarget(clientModel, anthropic, aliased) {
   if (clientModel && clientModel.includes('/')) {
     return Object.assign({ overridden: false, reason: 'explicit' }, pickProvider(clientModel, anthropic));
   }
-  if (cfg.modelPolicy === 'fixed' && cfg.activeModel) {
+  // 别名是管理员显式定义的语义路由，优先级高于「网关固定」
+  if (!aliased && cfg.modelPolicy === 'fixed' && cfg.activeModel) {
     const ap = cfg.providers.find((p) => p.id === cfg.active) || pickProvider(null, anthropic).provider;
     if (ap) return { provider: ap, model: cfg.activeModel, overridden: true, reason: 'fixed' };
   }
-  return Object.assign({ overridden: false, reason: 'auto' }, pickProvider(clientModel, anthropic));
+  return Object.assign({ overridden: aliased ? true : false, reason: aliased ? 'alias' : 'auto' }, pickProvider(clientModel, anthropic));
 }
 
 /** activeModel 与 active provider 对不上时，尽量纠正成一致的一组 */
@@ -568,17 +824,22 @@ function forwardHeaders(src, dropExtra) {
  * 通用透传代理。返回"响应彻底结束"的 Promise，供 withLane 排队与优雅退出使用。
  * 重试：仅当还没给客户端写过任何字节（headersSent=false）且状态为 429/5xx 或网络错误时，
  *       整个请求重放（bodyBuf 可重用）；一旦开始流式输出就绝不再试。
+ * 软失败：opts.softFail=true 时，可降级的错误（429/5xx/网络）不写客户端，只把结果返回给
+ *         降级链，由下一个 provider 接手；只有最后一个候选才真正把错误写给客户端。
  */
-function proxyRequest(req, res, provider, bodyBuf, model) {
+function proxyRequest(req, res, provider, bodyBuf, model, opts) {
+  const softFail = !!(opts && opts.softFail);
   return new Promise((finish) => {
     const started = Date.now();
     const t0 = process.hrtime.bigint();
+    let result = { ok: false, status: 502, kind: 'net', message: '未拿到上游响应' };
     let target;
     try {
       target = new URL(provider.baseUrl);
     } catch (_) {
-      sendJson(res, 502, { error: { message: `provider ${provider.id} 的 baseUrl 不合法`, type: 'gateway_config' } });
-      return finish();
+      result = { ok: false, status: 502, kind: 'config', message: `provider ${provider.id} 的 baseUrl 不合法` };
+      if (!softFail) sendJson(res, 502, { error: { message: result.message, type: 'gateway_config' } });
+      return finish(result);
     }
 
     const isHttps = target.protocol === 'https:';
@@ -622,7 +883,7 @@ function proxyRequest(req, res, provider, bodyBuf, model) {
     let currentReq = null;
     let retryTimer = null;
     let finished = false;
-    const done = () => { if (!finished) { finished = true; finish(); } };
+    const done = () => { if (!finished) { finished = true; finish(result); } };
     const canRetry = () => retry.enabled && attempt < retry.maxAttempts &&
       !res.headersSent && !res.writableEnded && !res.destroyed;
 
@@ -630,6 +891,26 @@ function proxyRequest(req, res, provider, bodyBuf, model) {
       attempt++;
       currentReq = transport.request(opts, (upRes) => {
         const status = upRes.statusCode || 0;
+
+        // 软失败：可降级的错误不写客户端，交回降级链换下一家
+        if (softFail && !canRetry() && isDegradable(statusKind(status))) {
+          const kind = statusKind(status);
+          upRes.setEncoding('utf8');
+          let errBody = '';
+          upRes.on('data', (c) => { if (errBody.length < 2048) errBody += c; });
+          upRes.on('end', () => {
+            const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
+            recordUsage(provider.id, model, status, ms, null);
+            logRequest({
+              path: req.url.split('?')[0], model: model || '-', provider: provider.id,
+              status, ms, at: started, error: `降级：上游 ${status} ${errBody.slice(0, 160)}`
+            });
+            result = { ok: false, status, kind, message: errBody.slice(0, 400) || ('上游 ' + status) };
+            done();
+          });
+          upRes.on('error', () => { result = { ok: false, status, kind, message: '上游中断' }; done(); });
+          return;
+        }
 
         // 429/5xx：还没给客户端写过任何字节，可以整请求重放
         if (canRetry() && (status === 429 || status >= 500)) {
@@ -667,6 +948,7 @@ function proxyRequest(req, res, provider, bodyBuf, model) {
             ms,
             at: started
           });
+          result = { ok: status >= 200 && status < 300, status, kind: statusKind(status), message: '' };
           done();
         });
         upRes.on('error', () => {
@@ -698,6 +980,8 @@ function proxyRequest(req, res, provider, bodyBuf, model) {
             path: req.url.split('?')[0], model: model || '-', provider: provider.id,
             status: 502, ms, at: started, error: err.message
           });
+          result = { ok: false, status: 502, kind: 'net', message: err.message };
+          if (softFail) { done(); return; }
           if (!res.headersSent) {
             sendJson(res, 502, {
               error: { message: `上游请求失败: ${err.message}`, type: 'gateway_upstream_error', provider: provider.id }
@@ -766,6 +1050,19 @@ async function handleAdmin(req, res, pathname, query) {
       active: cfg.active,
       activeModel: cfg.activeModel || null,
       modelPolicy: cfg.modelPolicy,
+      aliases: cfg.aliases,
+      fallback: cfg.fallback,
+      budget: cfg.budget,
+      circuit: cfg.circuit,
+      usage: {
+        requests: usage.requests,
+        errors: usage.errors,
+        prompt: usage.prompt,
+        completion: usage.completion,
+        avgMs: usage.requests ? Math.round(usage.ms / usage.requests) : 0,
+        items: Object.values(usage.items).sort((a, b) => b.requests - a.requests)
+      },
+      budgetState: budgetState(),
       runtime: {
         version: APP_VERSION,
         node: process.version,
@@ -777,6 +1074,7 @@ async function handleAdmin(req, res, pathname, query) {
         logs: cfg.logs,
         logFile: LOG_PATH,
         limits: cfg.limits,
+        circuits: circuitSnapshot(),
         lanes: Array.from(provLanes.entries()).map(([id, l]) => ({
           id, running: l.running, queued: l.queue.length
         })).filter((l) => l.running > 0 || l.queued > 0)
@@ -1027,6 +1325,41 @@ async function handleAdmin(req, res, pathname, query) {
     return fs.createReadStream(file).pipe(res);
   }
 
+  /* ---- 策略：别名 / 降级 / 预算 / 熔断 ---- */
+
+  if (pathname === '/api/aliases' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    cfg.aliases = normalizeAliases(body.aliases);
+    saveCfg();
+    return sendJson(res, 200, { ok: true, aliases: cfg.aliases });
+  }
+
+  if (pathname === '/api/fallback' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    cfg.fallback = normalizeFallback(Object.assign({}, cfg.fallback, body));
+    saveCfg();
+    return sendJson(res, 200, { ok: true, fallback: cfg.fallback });
+  }
+
+  if (pathname === '/api/budget' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    cfg.budget = normalizeBudget(Object.assign({}, cfg.budget, body));
+    if (body.resetToday) usage.today = null; // 今日计数清零
+    rollToday();
+    saveUsage();
+    saveCfg();
+    return sendJson(res, 200, { ok: true, budget: cfg.budget, budgetState: budgetState() });
+  }
+
+  if (pathname === '/api/circuit' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    cfg.circuit = normalizeCircuit(Object.assign({}, cfg.circuit, body));
+    if (body.reset === true || body.reset === 'all') resetCircuit();
+    else if (typeof body.reset === 'string') resetCircuit(body.reset);
+    saveCfg();
+    return sendJson(res, 200, { ok: true, circuit: cfg.circuit, circuits: circuitSnapshot() });
+  }
+
   if (pathname === '/api/reload' && method === 'POST') {
     cfg = loadCfg();
     return sendJson(res, 200, { ok: true, active: cfg.active });
@@ -1254,18 +1587,22 @@ function sseWrite(res, event, payload) {
   res.write('event: ' + event + '\ndata: ' + JSON.stringify(payload) + '\n\n');
 }
 
-/** Responses 代理：翻译 + 透传，返回完成 Promise；429/5xx 未写字节前可整请求重放 */
-function handleResponsesProxy(req, res, provider, body, model) {
+/** Responses 代理：翻译 + 透传，返回完成 Promise；429/5xx 未写字节前可整请求重放。
+ *  opts.softFail：可降级错误不写客户端，交回降级链（同 proxyRequest） */
+function handleResponsesProxy(req, res, provider, body, model, opts) {
+  const softFail = !!(opts && opts.softFail);
   return new Promise((finish) => {
   const started = Date.now();
   const t0 = process.hrtime.bigint();
+  let result = { ok: false, status: 502, kind: 'net', message: '未拿到上游响应' };
 
   let target;
   try {
     target = new URL(provider.baseUrl);
   } catch (_) {
-    sendJson(res, 502, { error: { message: `provider ${provider.id} 的 baseUrl 不合法`, type: 'gateway_config' } });
-    return finish();
+    result = { ok: false, status: 502, kind: 'config', message: `provider ${provider.id} 的 baseUrl 不合法` };
+    if (!softFail) sendJson(res, 502, { error: { message: result.message, type: 'gateway_config' } });
+    return finish(result);
   }
 
   const { chat, custom } = RSP.toChatRequest(body, model);
@@ -1293,7 +1630,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
   let currentReq = null;
   let retryTimer = null;
   let finished = false;
-  const done = () => { if (!finished) { finished = true; finish(); } };
+  const done = () => { if (!finished) { finished = true; finish(result); } };
   const canRetry = () => retry.enabled && attempt < retry.maxAttempts &&
     !res.headersSent && !res.writableEnded && !res.destroyed;
 
@@ -1320,6 +1657,22 @@ function handleResponsesProxy(req, res, provider, body, model) {
     }
 
     if (status >= 400) {
+      const kind = statusKind(status);
+      // 软失败：可降级的错误不写客户端，交回降级链
+      if (softFail && isDegradable(kind)) {
+        let errB = '';
+        upRes.setEncoding('utf8');
+        upRes.on('data', (c) => { if (errB.length < 2048) errB += c; });
+        upRes.on('end', () => {
+          const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
+          logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status, ms, at: started, error: `降级：${status} ${errB.slice(0, 160)}` });
+          recordUsage(provider.id, model, status, ms, null);
+          result = { ok: false, status, kind, message: errB.slice(0, 400) || ('上游 ' + status) };
+          done();
+        });
+        upRes.on('error', () => { result = { ok: false, status, kind, message: '上游中断' }; done(); });
+        return;
+      }
       let err = '';
       upRes.setEncoding('utf8');
       upRes.on('data', (c) => { err += c; });
@@ -1328,6 +1681,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
         logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status, ms, at: started, error: err.slice(0, 200) });
         recordUsage(provider.id, model, status, ms, null);
         const msg = '上游 ' + status + ': ' + err.slice(0, 600);
+        result = { ok: false, status, kind, message: msg };
         if (chat.stream) {
           res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive' });
           if (res.flushHeaders) res.flushHeaders();
@@ -1360,6 +1714,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
         logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 200, ms, at: started });
         recordUsage(provider.id, model, 200, ms, usageToTokens(json && json.usage));
         sendJson(res, 200, RSP.chatToResponses(json, model, custom));
+        result = { ok: true, status: 200, kind: 'ok', message: '' };
         done();
       });
       upRes.on('error', (e) => {
@@ -1413,6 +1768,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
       const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
       logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 200, ms, at: started });
       recordUsage(provider.id, model, 200, ms, usageToTokens(streamUsage));
+      result = { ok: true, status: 200, kind: 'ok', message: '' };
       done();
     });
     upRes.on('error', (e) => {
@@ -1436,6 +1792,8 @@ function handleResponsesProxy(req, res, provider, body, model) {
     }
     try {
       logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 502, ms, at: started, error: err.message });
+      result = { ok: false, status: 502, kind: 'net', message: err.message };
+      if (softFail) { done(); return; }
       if (!res.headersSent) {
         sendJson(res, 502, { error: { message: `上游请求失败: ${err.message}`, type: 'gateway_upstream_error', provider: provider.id } });
       } else {
@@ -1526,26 +1884,89 @@ const server = http.createServer(async (req, res) => {
     }
     if (parsed && typeof parsed.model === 'string') model = parsed.model;
 
-    const picked = resolveTarget(model, anthropic);
+    // 预算：超限且策略为 reject 时，在转发前直接挡掉
+    const bud = budgetState();
+    if (bud.enabled && bud.action === 'reject' && bud.exceeded) {
+      return sendJson(res, 429, {
+        error: {
+          message: `今日预算已用尽（${bud.over.join(' / ')}），网关暂停转发。可在「策略 → 每日预算」调整或清零。`,
+          type: 'gateway_budget_exceeded',
+          budget: bud
+        }
+      });
+    }
+
+    // 模型别名：客户端写 fast/smart/cheap 也能路由到具体模型
+    const aliased = applyAlias(model);
+    if (aliased.alias) model = aliased.model;
+
+    const picked = resolveTarget(model, anthropic, !!(aliased && aliased.alias));
     if (!picked.provider) {
       return sendJson(res, 503, { error: { message: '没有可用的 provider，请先在管理界面添加', type: 'gateway_no_provider' } });
     }
 
-    const upstreamModel = mapModel(picked.provider, picked.model) || picked.model;
-    if (upstreamModel) model = upstreamModel;
+    // 客户端显式写了 "providerId/model" 时不降级（用户已明确指定）
+    const explicit = !!(model && model.includes('/'));
+    const cands = buildCandidates(picked.provider, explicit);
+    const baseModel = (mapModel(picked.provider, picked.model) || picked.model);
 
-    // Responses 协议：上游只支持 chat/completions 时走适配层
-    if (parsed && pathname.replace(/\/+$/, '') === '/v1/responses' &&
-        !anthropic && picked.provider.upstreamResponses !== true) {
-      return withLane(picked.provider.id, () => handleResponsesProxy(req, res, picked.provider, parsed, model), res);
+    let lastRes = null;
+    let used = null;
+    for (let i = 0; i < cands.length; i++) {
+      const p = cands[i];
+      // 只有"原本选定的那个 provider"才沿用原模型名；其余（含主熔断让位后的新主）
+      // 都要按目标 provider 重新解析，否则会把别家的模型名发过去导致 403/404
+      const m = (p.id === picked.provider.id)
+        ? baseModel
+        : mapModel(p, resolveFallbackModel(p, baseModel));
+      const softFail = i < cands.length - 1;
+
+      let body = rawBody;
+      if (parsed && m) {
+        parsed.model = m;
+        body = Buffer.from(JSON.stringify(parsed), 'utf8');
+      }
+
+      const useResponses = parsed && pathname.replace(/\/+$/, '') === '/v1/responses' &&
+        !anthropic && p.upstreamResponses !== true;
+
+      let r = null;
+      try {
+        r = await withLane(p.id, () => (useResponses
+          ? handleResponsesProxy(req, res, p, parsed, m, { softFail })
+          : proxyRequest(req, res, p, body, m, { softFail })), res);
+      } catch (e) {
+        if (e && e.code === 'QUEUE_TIMEOUT') {
+          r = { ok: false, status: 503, kind: 'upstream', message: e.message }; // 上游太忙也算可降级
+        } else {
+          throw e;
+        }
+      }
+
+      noteUpstreamResult(p.id, !!(r && r.ok), r && r.kind, r && r.message);
+      if (r && r.ok) {
+        used = { provider: p.id, model: m, hop: i };
+        break;
+      }
+      lastRes = r || { ok: false, status: 502, kind: 'net', message: '未拿到上游响应' };
+      if (i === cands.length - 1) return; // 最后一个候选负责把错误写给客户端
+      if (!isDegradable(lastRes.kind)) break;
     }
 
-    // 把最终模型名写回请求体：覆盖客户端传的、或客户端压根没传时补上
-    if (parsed && upstreamModel && upstreamModel !== parsed.model) {
-      parsed.model = upstreamModel;
-      bodyBuf = Buffer.from(JSON.stringify(parsed), 'utf8');
+    if (!used) {
+      // 走到这里说明提前放弃（错误不可降级），此时客户端还没收到任何响应
+      const pid = cands[Math.min(cands.length - 1, Math.max(0, cands.length - 1))].id;
+      sendJson(res, lastRes.status || 502, {
+        error: {
+          message: lastRes.message || '上游请求失败',
+          type: lastRes.kind === 'rate' ? 'upstream_rate_limited' : 'upstream_error',
+          provider: pid,
+          kind: lastRes.kind
+        }
+      });
+    } else if (used.hop > 0) {
+      console.log(`[llm-gateway] 已降级到第 ${used.hop} 候选：${used.provider} / ${used.model}`);
     }
-    return withLane(picked.provider.id, () => proxyRequest(req, res, picked.provider, bodyBuf, model), res);
   } catch (e) {
     if (e && e.code === 'QUEUE_TIMEOUT') {
       return sendJson(res, 503, { error: { message: e.message, type: 'gateway_queue_timeout' } });

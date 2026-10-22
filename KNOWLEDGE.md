@@ -5,7 +5,7 @@
 >
 > **维护纪律**：任何改动都必须同步更新本文件的「变更历史」与相关章节，并提交 git。
 
-- 当前版本：**v1.8.0**（见 `package.json`）
+- 当前版本：**v1.9.0**（见 `package.json`）
 - 仓库：https://github.com/Linix0/llm-gateway （Public / main / MIT）
 - 运行时：Node >= 18，**零第三方依赖**（只 `require` 内置模块）
 - 本机路径：`C:\Users\Administrator\WorkBuddy\2026-10-22-14-09-51\llm-gateway`
@@ -237,6 +237,36 @@ curl --noproxy '*' -X POST http://127.0.0.1:8787/v1/chat/completions \
 ---
 
 ## 9. 变更历史
+
+### v1.9.0 · 模型别名、失败降级、每日预算与熔断
+
+新增四个策略段，都在管理界面「策略」页（第五个分页）配置：
+
+- **模型别名** `aliases`：客户端写短名（如 `fast`）→ 网关联到真实模型。
+  `applyAlias()` 在路由前替换；**别名优先于「网关固定」策略**（管理员显式定义的语义路由），
+  `resolveTarget(clientModel, anthropic, aliased)` 第三个参数为 true 时跳过 fixed 分支。
+  目标可写 `providerId/modelId`（精确）或纯模型名。
+- **失败降级** `fallback`：主 provider 失败时按 `order` 链换备用重试。
+  `buildCandidates(primary, explicit)` 构造候选列表；`proxyRequest`/`handleResponsesProxy`
+  新增 `opts.softFail`——可降级错误（429/5xx/网络，即 `DEGRADABLE_KINDS`∩`onKinds`）不写客户端，
+  只把 `{ok,status,kind,message}` 返回给降级链。模型名解析：仅「原本选定的 provider」沿用原名，
+  其余（含主熔断让位后的新主）走 `resolveFallbackModel()`：同名 → `modelMap` → 第一个模型。
+  客户端显式 `providerId/modelId` 时永不降级。
+- **每日预算** `budget`：`usage.json` 新增 `today` 字段（本地时区 `resetHour` 点开新一天），
+  转发前 `budgetState()` 检查，`action=reject` 且超限返回 429 `gateway_budget_exceeded`。
+- **熔断** `circuit`（默认开）：`noteUpstreamResult()` 按 provider 累计连续失败，到阈值后
+  `openUntil = now + cooldownMs`；熔断中的 provider 被 `buildCandidates` 跳过（含主 provider 让位）。
+  `POST /api/circuit {"reset":"all"|providerId}` 手动复位。熔断状态只在内存，重启清零。
+
+**开发中实测抓到的两个真 bug**：
+
+1. `withLane()` 没有 `return await fn()`，导致降级链/熔断拿到 `undefined`，所有请求都被记成失败——
+   表现为熔断计数只涨不清。修复：必须返回 fn 的结果。
+2. 主 provider 被熔断跳过后，模型名仍按主 provider 的视角解析（`i === 0` 判断），把 nextapi 没有的
+   模型名发过去 → 上游 403。修复：改为按「p 是否为 picked.provider」判断。
+
+实测：别名 `fast` 在 fixed 策略下正确路由到 nextapi；agentrouter（不可达）→ nextapi 降级 200；
+熔断 threshold=2 后第三次请求直接跳过 agentrouter（7s → 1.4s）；预算 reject 超限返回 429。
 
 ### v1.8.0 · 侧边导航布局、功能释意与 README 规范化
 
