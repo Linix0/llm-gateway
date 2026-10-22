@@ -5,7 +5,7 @@
 >
 > **维护纪律**：任何改动都必须同步更新本文件的「变更历史」与相关章节，并提交 git。
 
-- 当前版本：**v1.10.1**（见 `package.json`）
+- 当前版本：**v1.10.2**（见 `package.json`）
 - 仓库：https://github.com/Linix0/llm-gateway （Public / main / MIT）
 - 运行时：Node >= 18，**零第三方依赖**（只 `require` 内置模块）
 - 本机路径：`C:\Users\Administrator\WorkBuddy\2026-10-22-14-09-51\llm-gateway`
@@ -300,6 +300,11 @@ curl --noproxy '*' http://127.0.0.1:8787/styles.css -o /dev/null -w '%{http_code
 curl --noproxy '*' -X POST http://127.0.0.1:8787/v1/chat/completions \
   -H 'content-type: application/json' -H 'authorization: Bearer local' \
   --data-binary @/tmp/req.json             # {"model":"…","messages":[{"role":"user","content":"ping"}],"max_tokens":16}
+# ★ Codex 走的是 /v1/responses，必须单独冒烟（v1.10.2 的 P0 就是漏测这条路径）
+curl --noproxy '*' -m 40 -X POST http://127.0.0.1:8787/v1/responses \
+  -H 'content-type: application/json' -H 'authorization: Bearer local' \
+  --data-binary @/tmp/resp.json   # 流式与非流式各测一次，都要有 200 与响应体
+curl --noproxy '*' http://127.0.0.1:8787/api/state   # 确认 runtime.lanes 为空（无车道泄漏）
 ```
 
 拆分后尤其要验证的：`/api/state` 能返回、`/api/reload` 后界面数据仍更新（证明原地覆盖生效）、
@@ -317,6 +322,28 @@ curl --noproxy '*' -X POST http://127.0.0.1:8787/v1/chat/completions \
 ---
 
 ## 9. 变更历史
+
+### v1.10.2 · P0：Codex（/v1/responses）请求全部挂起
+
+**症状**：Codex 发出请求后无限等待，无任何响应；`/api/state` 里该 provider 车道 `running=1` 长期不归零，
+后续请求 `queued` 堆积，直到 `queueTimeoutMs`(120s) 才返回 503「排队超时：该上游当前繁忙」。
+**只影响 `/v1/responses`**（Codex `wire_api=responses`），`chat/completions` 正常。
+
+**根因**：`lib/proxy.js` 的 `handleResponsesProxy()` 里定义了 `const send = () => {...}`，
+但 Promise executor 末尾**漏了 `send()` 调用**（v1.10.0 拆分时丢失；`proxyRequest` 第 196 行有，这里没有）。
+结果：请求从不发给上游 → 返回的 Promise 永久 pending → `withLane` 的 `finally releaseLane` 永远不执行
+→ 车道被永久占用。**客户端断开也不会释放**（因为 `res.on('close') → done()` 依赖 send 分支里注册的监听器）。
+
+**修复**：executor 末尾加 `send();`（与 proxyRequest 对称）。
+
+**排障方法（可复用）**：
+1. `GET /api/state` 看 `runtime.lanes`：某 provider 长期 `running>=1` 且 `queued` 增长 = 车道卡死。
+2. 先直连上游验证上游健康（排除上游问题），再查网关侧。
+3. 日志默认写于请求结束时，**挂起的请求不产生日志**——排障前先 `POST /api/logs/config {"enabled":true}`。
+4. 修这类"永不响应"的 bug 时，优先比对 `proxyRequest` 与 `handleResponsesProxy` 两个函数的结构对称性。
+
+**教训**：拆分后只做了 chat/completions 与别名的端到端冒烟，**没有覆盖 `/v1/responses`**——
+而 Codex 恰恰走这条路径。验证清单已补上两条 responses 冒烟（流式 + 非流式）。
 
 ### v1.10.1 · 策略页下拉化与卡片密度治理（纯前端，无 API 变更）
 
