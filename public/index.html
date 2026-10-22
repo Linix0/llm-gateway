@@ -167,6 +167,18 @@
     border: 1px dashed var(--line); border-radius: var(--radius-sm); line-height: 1.7;
   }
 
+  /* ---------- route panel ---------- */
+  .route { border-color: color-mix(in srgb, var(--accent) 32%, var(--line)); }
+  .route .card-head { background: linear-gradient(90deg, var(--accent-soft), transparent 55%); }
+  .route-body { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .route-select {
+    flex: 0 1 380px; min-width: 220px; height: 40px; font-family: var(--mono); font-size: 13px;
+    font-weight: 500; padding: 0 12px;
+  }
+  .route-meta { flex: 1 1 260px; color: var(--muted); font-size: 12.5px; line-height: 1.7; min-width: 0; }
+  .route-meta b { color: var(--text); font-family: var(--mono); font-weight: 600; }
+  .route-meta .warn-t { color: var(--warn); }
+
   /* ---------- form ---------- */
   .section { padding: 14px; border-bottom: 1px solid var(--line-soft); }
   .section:last-of-type { border-bottom: none; }
@@ -392,8 +404,23 @@
       </div>
     </div>
 
-    <!-- 右：编辑 + 接入 -->
+    <!-- 右：当前调用 + 编辑 + 接入 -->
     <div class="col">
+      <div class="card route">
+        <div class="card-head">
+          <h2>当前调用模型</h2>
+          <div class="grow"></div>
+          <div class="seg" id="policySeg">
+            <button data-p="fixed" title="无论客户端传什么模型名，都用下面选定的模型">网关固定</button>
+            <button data-p="auto" title="按客户端传来的模型名路由">跟随客户端</button>
+          </div>
+        </div>
+        <div class="card-body route-body">
+          <select class="route-select" id="modelSelect" aria-label="当前调用模型"></select>
+          <div class="route-meta" id="routeMeta"></div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-head">
           <h2 id="formTitle">编辑 Provider</h2>
@@ -476,9 +503,9 @@
         <div class="section" style="border-top:1px solid var(--line-soft)">
           <div class="section-title">路由规则</div>
           <div class="hint">
-            ① 模型名写 <span class="mono">providerId/modelId</span> → 精确指定上游<br />
-            ② 模型名只被某一个 provider 声明 → 自动路由到它<br />
-            ③ 其余情况 → 走「当前」provider
+            <b style="color:var(--text)">网关固定</b>（推荐）：客户端传什么模型名都被替换成上面的「当前调用模型」，<br />
+            只有写成 <span class="mono">providerId/modelId</span> 时才精确指定、不受策略影响。<br />
+            <b style="color:var(--text)">跟随客户端</b>：按模型名匹配 provider（唯一声明者优先），匹配不到才用当前设置。
           </div>
         </div>
       </div>
@@ -646,6 +673,54 @@ function confirmBox(title, desc, okText) {
 function setDirty(v) {
   dirty = v;
   $('#dirtyTag').hidden = !v;
+}
+
+/* ------------------------------------------------------------------ */
+/* 渲染：当前调用模型                                                  */
+/* ------------------------------------------------------------------ */
+function ctxLabel(m) {
+  const n = Number(m && m.contextWindow);
+  if (!n) return '';
+  return n >= 1024 ? ' · ' + Math.round(n / 1024) + 'K' : '';
+}
+
+function renderRoute() {
+  const sel = $('#modelSelect');
+  const cur = state.activeModel;
+  const groups = state.providers.map((p) => {
+    const opts = (p.models || []).map((m) => {
+      const val = p.id + '::' + m.id;
+      const on = p.id === state.active && m.id === cur ? ' selected' : '';
+      return `<option value="${escapeHtml(val)}"${on}>${escapeHtml(m.name || m.id)} — ${escapeHtml(m.id)}${ctxLabel(m)}</option>`;
+    }).join('');
+    return opts ? `<optgroup label="${escapeHtml(p.name || p.id)} (${escapeHtml(p.id)})">${opts}</optgroup>` : '';
+  }).join('');
+
+  sel.innerHTML = groups || '<option value="">（还没有模型）</option>';
+  sel.disabled = !groups;
+
+  const ap = state.providers.find((p) => p.id === state.active);
+  const am = ap && (ap.models || []).find((m) => m.id === cur);
+  const fixed = state.modelPolicy === 'fixed';
+  $$('#policySeg button').forEach((b) => b.classList.toggle('on', b.dataset.p === state.modelPolicy));
+
+  if (!groups) {
+    $('#routeMeta').innerHTML = '先在左边加一个 provider 和模型。';
+    return;
+  }
+  if (fixed) {
+    if (!cur) {
+      $('#routeMeta').innerHTML = '<span class="warn-t">固定模式下还没选模型</span>，选一个即可生效。';
+    } else {
+      $('#routeMeta').innerHTML =
+        `所有请求都会走 <b>${escapeHtml(state.active)}</b> / <b>${escapeHtml(cur)}</b>${am ? ctxLabel(am) : ''}<br />` +
+        `Codex / Cursor 里写什么模型名都不影响结果；想临时指定别的，在模型名里写 <b>providerId/modelId</b>。`;
+    }
+  } else {
+    $('#routeMeta').innerHTML =
+      `按客户端传来的模型名路由，<b>${escapeHtml(state.active)}</b> 是匹配不到时的兜底` +
+      (cur ? `（默认 <b>${escapeHtml(cur)}</b>）` : '') + '。<br />客户端没传模型时会用这里的设置。';
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -827,7 +902,10 @@ async function load() {
   $('#endpoint').textContent = addr;
   $('#dot').className = 'dot on';
   $('#statusText').textContent = '运行中 · 已运行 ' + fmtUptime(s.runtime && s.runtime.uptime);
-  $('#chipActive').innerHTML = '当前 <b>' + escapeHtml(s.active || '—') + '</b>';
+  $('#chipActive').innerHTML = '当前 <b>' + escapeHtml(s.activeModel || '未指定') + '</b>' +
+    (s.modelPolicy === 'fixed' ? '' : ' <span style="opacity:.7">(自动)</span>');
+  $('#chipActive').title = 'provider: ' + (s.active || '—') + ' · 策略: ' + (s.modelPolicy === 'fixed' ? '网关固定' : '跟随客户端');
+  renderRoute();
   const total = new Set();
   s.providers.forEach((p) => (p.models || []).forEach((m) => total.add(m.id)));
   $('#chipModels').textContent = total.size;
@@ -884,6 +962,7 @@ function currentProv() {
   return state.providers.find((p) => p.id === state.active) || state.providers[0] || null;
 }
 function firstModel() {
+  if (state.activeModel) return state.activeModel;
   const p = currentProv();
   return (p && p.models && p.models[0] && p.models[0].id) || 'deepseek-v4.1-flash';
 }
@@ -891,9 +970,12 @@ function updateSnippets() {
   const s = state.server || { host: '127.0.0.1', port: 8787 };
   const base = `http://${s.host}:${s.port}`;
   const model = firstModel();
+  const fixedNote = state.modelPolicy === 'fixed'
+    ? '\n# 模型由网关决定：想换模型在网关界面点，这里不用改（写了也会被忽略）'
+    : '';
   const map = {
     codex: `# ~/.codex/config.toml
-model = "${model}"
+model = "${model}"${fixedNote}
 model_provider = "localgateway"
 
 [model_providers.localgateway]
@@ -961,6 +1043,31 @@ async function loadLogs() {
 /* ------------------------------------------------------------------ */
 $('#btnSave').onclick = save;
 $('#btnNew').onclick = newProvider;
+
+/* 当前调用模型 / 路由策略 */
+$('#modelSelect').addEventListener('change', async (e) => {
+  const v = e.target.value;
+  if (!v) return;
+  const [provider, model] = v.split('::');
+  try {
+    await api('/api/model', { method: 'POST', body: JSON.stringify({ provider, model }) });
+    toast('当前模型已切换为 ' + model, 'ok');
+    await load();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+});
+$('#policySeg').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-p]');
+  if (!b || b.dataset.p === state.modelPolicy) return;
+  try {
+    const r = await api('/api/policy', { method: 'POST', body: JSON.stringify({ policy: b.dataset.p }) });
+    toast(r.modelPolicy === 'fixed' ? '已切换：网关固定模型' : '已切换：跟随客户端模型名', 'ok');
+    await load();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+});
 $('#btnAddModel').onclick = () => { addModelRow(); setDirty(true); };
 
 ['#f_id', '#f_name', '#f_api', '#f_base', '#f_key'].forEach((sel) => {

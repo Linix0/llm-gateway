@@ -57,7 +57,9 @@ const DEFAULT_CFG = {
         { id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 128000 }
       ]
     }
-  ]
+  ],
+  activeModel: 'deepseek-v4.1-flash',
+  modelPolicy: 'fixed'
 };
 
 /* ------------------------------------------------------------------ */
@@ -77,6 +79,8 @@ function loadCfg() {
   const cfg = {
     server: Object.assign({ host: '127.0.0.1', port: 8787 }, raw.server || {}),
     active: raw.active || (raw.providers && raw.providers[0] ? raw.providers[0].id : ''),
+    activeModel: raw.activeModel || null,
+    modelPolicy: raw.modelPolicy === 'fixed' ? 'fixed' : 'auto',
     providers: Array.isArray(raw.providers) ? raw.providers : []
   };
   cfg.providers.forEach((p) => {
@@ -85,6 +89,7 @@ function loadCfg() {
     p.baseUrl = String(p.baseUrl || '').trim();
     p.models = Array.isArray(p.models) ? p.models : [];
   });
+  reconcileActiveModel(cfg);
   return cfg;
 }
 
@@ -187,6 +192,35 @@ function mapModel(provider, model) {
   const m = provider.models.find((x) => x.id === model);
   if (m && m.upstream) return m.upstream;
   return model;
+}
+
+/**
+ * 决定这次请求真正用哪个 provider + 哪个模型。
+ *
+ *  - 模型名写成 "providerId/modelId"：永远精确路由，不受策略影响
+ *  - modelPolicy = "fixed" 且设置了 activeModel：忽略客户端传来的模型名，
+ *    一律用网关注入的「当前调用模型」（active provider + activeModel）
+ *  - modelPolicy = "auto"：按客户端模型名匹配 provider，匹配不到回落 active
+ */
+function resolveTarget(clientModel, anthropic) {
+  if (clientModel && clientModel.includes('/')) {
+    return Object.assign({ overridden: false, reason: 'explicit' }, pickProvider(clientModel, anthropic));
+  }
+  if (cfg.modelPolicy === 'fixed' && cfg.activeModel) {
+    const ap = cfg.providers.find((p) => p.id === cfg.active) || pickProvider(null, anthropic).provider;
+    if (ap) return { provider: ap, model: cfg.activeModel, overridden: true, reason: 'fixed' };
+  }
+  return Object.assign({ overridden: false, reason: 'auto' }, pickProvider(clientModel, anthropic));
+}
+
+/** activeModel 与 active provider 对不上时，尽量纠正成一致的一组 */
+function reconcileActiveModel(c) {
+  const conf = c || cfg;
+  if (!conf.activeModel) return;
+  const act = conf.providers.find((p) => p.id === conf.active);
+  if (act && act.models.some((m) => m.id === conf.activeModel)) return;
+  const owner = conf.providers.find((p) => p.models.some((m) => m.id === conf.activeModel));
+  if (owner) conf.active = owner.id;
 }
 
 function readBody(req) {
@@ -370,6 +404,8 @@ async function handleAdmin(req, res, pathname, query) {
     return sendJson(res, 200, {
       server: cfg.server,
       active: cfg.active,
+      activeModel: cfg.activeModel || null,
+      modelPolicy: cfg.modelPolicy,
       runtime: {
         version: APP_VERSION,
         node: process.version,
@@ -412,6 +448,10 @@ async function handleAdmin(req, res, pathname, query) {
       cfg.providers.push(rec);
     }
     if (!cfg.providers.some((p) => p.id === cfg.active)) cfg.active = cfg.providers[0].id;
+    if (cfg.activeModel && !cfg.providers.some((p) => p.models.some((m) => m.id === cfg.activeModel))) {
+      cfg.activeModel = null; // 该模型已从所有 provider 移除
+    }
+    reconcileActiveModel();
     saveCfg();
     return sendJson(res, 200, { ok: true, providers: cfg.providers.map((p) => p.id) });
   }
@@ -423,6 +463,9 @@ async function handleAdmin(req, res, pathname, query) {
     }
     cfg.providers = cfg.providers.filter((p) => p.id !== id);
     if (cfg.active === id) cfg.active = cfg.providers[0].id;
+    if (cfg.activeModel && !cfg.providers.some((p) => p.models.some((m) => m.id === cfg.activeModel))) {
+      cfg.activeModel = null;
+    }
     saveCfg();
     return sendJson(res, 200, { ok: true });
   }
@@ -433,8 +476,46 @@ async function handleAdmin(req, res, pathname, query) {
       return sendJson(res, 404, { error: { message: 'provider 不存在: ' + body.id } });
     }
     cfg.active = body.id;
+    const p = cfg.providers.find((x) => x.id === body.id);
+    if (cfg.activeModel && !(p.models || []).some((m) => m.id === cfg.activeModel)) {
+      cfg.activeModel = p.models && p.models[0] ? p.models[0].id : null;
+    }
     saveCfg();
-    return sendJson(res, 200, { ok: true, active: cfg.active });
+    return sendJson(res, 200, { ok: true, active: cfg.active, activeModel: cfg.activeModel });
+  }
+
+  /** 设置「当前调用模型」：modelId，可选 providerId */
+  if (pathname === '/api/model' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const mid = String(body.model || '').trim();
+    if (!mid) return sendJson(res, 400, { error: { message: 'model 必填' } });
+    let target = body.provider ? cfg.providers.find((x) => x.id === body.provider) : null;
+    if (!target) {
+      target = cfg.providers.find((x) => x.id === cfg.active && (x.models || []).some((m) => m.id === mid))
+        || cfg.providers.find((x) => (x.models || []).some((m) => m.id === mid));
+    }
+    if (!target) {
+      // 允许填上游真实存在、但本地没登记的模型名
+      target = cfg.providers.find((x) => x.id === cfg.active) || cfg.providers[0];
+    }
+    if (!target) return sendJson(res, 400, { error: { message: '还没有可用的 provider' } });
+    cfg.active = target.id;
+    cfg.activeModel = mid;
+    if (body.policy === 'auto' || body.policy === 'fixed') cfg.modelPolicy = body.policy;
+    saveCfg();
+    return sendJson(res, 200, { ok: true, active: cfg.active, activeModel: cfg.activeModel, modelPolicy: cfg.modelPolicy });
+  }
+
+  /** 路由策略：auto=跟随客户端模型名，fixed=固定用当前调用模型 */
+  if (pathname === '/api/policy' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    cfg.modelPolicy = body.policy === 'fixed' ? 'fixed' : 'auto';
+    if (cfg.modelPolicy === 'fixed' && !cfg.activeModel) {
+      const p = cfg.providers.find((x) => x.id === cfg.active) || cfg.providers[0];
+      if (p && p.models && p.models[0]) cfg.activeModel = p.models[0].id;
+    }
+    saveCfg();
+    return sendJson(res, 200, { ok: true, modelPolicy: cfg.modelPolicy, activeModel: cfg.activeModel });
   }
 
   if (pathname === '/api/test' && method === 'POST') {
@@ -702,7 +783,14 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (pathname === '/healthz') {
-      return sendJson(res, 200, { ok: true, active: cfg.active, providers: cfg.providers.length, uptime: Math.round(process.uptime()) });
+      return sendJson(res, 200, {
+        ok: true,
+        active: cfg.active,
+        activeModel: cfg.activeModel || null,
+        modelPolicy: cfg.modelPolicy,
+        providers: cfg.providers.length,
+        uptime: Math.round(process.uptime())
+      });
     }
 
     if (pathname.startsWith('/api/')) {
@@ -730,7 +818,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (parsed && typeof parsed.model === 'string') model = parsed.model;
 
-    const picked = pickProvider(model, anthropic);
+    const picked = resolveTarget(model, anthropic);
     if (!picked.provider) {
       return sendJson(res, 503, { error: { message: '没有可用的 provider，请先在管理界面添加', type: 'gateway_no_provider' } });
     }
@@ -744,7 +832,8 @@ const server = http.createServer(async (req, res) => {
       return handleResponsesProxy(req, res, picked.provider, parsed, model);
     }
 
-    if (parsed && typeof parsed.model === 'string' && upstreamModel && upstreamModel !== parsed.model) {
+    // 把最终模型名写回请求体：覆盖客户端传的、或客户端压根没传时补上
+    if (parsed && upstreamModel && upstreamModel !== parsed.model) {
       parsed.model = upstreamModel;
       bodyBuf = Buffer.from(JSON.stringify(parsed), 'utf8');
     }
@@ -765,7 +854,7 @@ server.on('clientError', (err, socket) => {
 server.listen(cfg.server.port, cfg.server.host, () => {
   ensureDir(DATA_DIR);
   console.log(`[llm-gateway] listening on http://${cfg.server.host}:${cfg.server.port}`);
-  console.log(`[llm-gateway] active provider: ${cfg.active}`);
+  console.log(`[llm-gateway] route: ${cfg.active} / ${cfg.activeModel || '(跟随客户端)'} · policy=${cfg.modelPolicy}`);
   console.log(`[llm-gateway] 管理界面: http://${cfg.server.host}:${cfg.server.port}/`);
 });
 

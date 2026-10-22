@@ -112,11 +112,23 @@ stream_idle_timeout_ms = 300000
 
 ## 路由规则
 
+**两种策略**（管理界面顶部「当前调用模型」卡片里切换）：
+
+- **网关固定**（默认，推荐）：客户端传什么模型名都会被替换成界面里选定的「当前调用模型」。
+  换模型只去界面点一下，Codex / Cursor / 任何客户端都不用改配置。
+- **跟随客户端**：按客户端传来的模型名匹配 provider（唯一声明者优先），匹配不到时回落到当前设置。
+
+无论哪种策略，写成 `providerId/modelId` 都会精确指定、不受策略影响：
+
 | 客户端传的 model | 实际走的 provider |
 |---|---|
 | `providerId/modelId`（如 `agentrouter/gpt-5.6-sol`） | 精确指定该 provider，并去掉前缀 |
-| 只被某一个 provider 声明过的模型名 | 自动路由到那个 provider |
-| 其他任何模型名 | 「当前」provider（界面上一键切换） |
+| 网关固定模式下的其他任何模型名 | 当前调用模型（界面里选的那个） |
+| 跟随客户端模式下只被某 provider 声明的模型名 | 自动路由到那个 provider |
+| 跟随客户端模式下未知的模型名 | 当前 provider + 当前模型 |
+
+对应管理 API：`POST /api/model {"model":"glm-5.3"}`、`POST /api/policy {"policy":"fixed"|"auto"}`，
+配置落在 `data/config.json` 的 `activeModel` / `modelPolicy` 字段。
 
 上游真实模型名可在 provider 的模型条目里用 `upstream` 字段重映射：
 
