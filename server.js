@@ -111,8 +111,18 @@ function loadCfg() {
 
 let cfg = loadCfg();
 
+/**
+ * 原子写配置：先写 .tmp，再把上一版留成 .bak，最后 rename 覆盖。
+ * 这样中途崩溃/断电不会留下半个 config.json（曾是直接 writeFileSync 覆盖）。
+ */
 function saveCfg() {
-  fs.writeFileSync(CFG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+  ensureDir(DATA_DIR);
+  const tmp = CFG_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2), 'utf8');
+  try {
+    if (fs.existsSync(CFG_PATH)) fs.copyFileSync(CFG_PATH, CFG_PATH + '.bak');
+  } catch (_) { /* 备份失败不影响主流程 */ }
+  fs.renameSync(tmp, CFG_PATH);
 }
 
 /** 解析 provider 的密钥，支持 env:VAR 引用 */
@@ -1004,9 +1014,26 @@ function handleResponsesProxy(req, res, provider, body, model) {
 /* 主服务                                                              */
 /* ------------------------------------------------------------------ */
 
+/** 在途请求计数，优雅退出时要等它们走完 */
+let inFlight = 0;
+let shuttingDown = false;
+
+function trackRequest(res) {
+  inFlight++;
+  let done = false;
+  const dec = () => { if (!done) { done = true; inFlight--; } };
+  res.on('finish', dec);
+  res.on('close', dec);
+}
+
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost');
   const pathname = u.pathname;
+
+  if (shuttingDown) {
+    return sendJson(res, 503, { error: { message: '网关正在退出，请稍后重试', type: 'gateway_shutting_down' } });
+  }
+  trackRequest(res);
 
   try {
     if (pathname === '/healthz') {
@@ -1016,7 +1043,9 @@ const server = http.createServer(async (req, res) => {
         activeModel: cfg.activeModel || null,
         modelPolicy: cfg.modelPolicy,
         providers: cfg.providers.length,
-        uptime: Math.round(process.uptime())
+        uptime: Math.round(process.uptime()),
+        inFlight,
+        shuttingDown
       });
     }
 
@@ -1090,6 +1119,20 @@ server.listen(cfg.server.port, cfg.server.host, () => {
   console.log(`[llm-gateway] 管理界面: http://${cfg.server.host}:${cfg.server.port}/`);
 });
 
-process.on('SIGINT', () => { console.log('\n[llm-gateway] bye'); process.exit(0); });
-process.on('SIGTERM', () => process.exit(0));
+/** 优雅退出：停收新请求 → 等在途完成（最多 15s）→ 退出 */
+async function shutdown(sig) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[llm-gateway] 收到 ${sig}，停止接收新请求，等待 ${inFlight} 个在途请求…`);
+  try { server.close(); } catch (_) {}
+  const t0 = Date.now();
+  while (inFlight > 0 && Date.now() - t0 < 15000) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  console.log(`[llm-gateway] 在途 ${inFlight} 个，退出`);
+  process.exit(0);
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('uncaughtException', (e) => console.error('[llm-gateway] uncaught:', e.message));

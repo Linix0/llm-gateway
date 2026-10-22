@@ -3,6 +3,9 @@
 一个跑在本机的小服务，把 Codex / Cursor / Claude Code / 任意 OpenAI 兼容客户端统一指向
 `http://127.0.0.1:8787`，上游用哪家大模型、用哪把 key，全部在这个网关上切换，客户端完全不用改。
 
+> 要改代码/接手维护，请先读 **[KNOWLEDGE.md](./KNOWLEDGE.md)**（架构、模块索引、设计决策与坑、变更历史）。
+> 本文件只讲怎么用。
+
 - 零依赖：只用 Node 内置模块，不需要 `npm install`
 - 多 provider：想加几家加几家，界面上一键切换「当前」
 - 双协议：OpenAI（`/v1/chat/completions`、`/v1/responses`）与 Anthropic（`/v1/messages`）原样透传
@@ -147,7 +150,9 @@ llm-gateway/
 ├── server.js                 服务主体（零依赖）
 ├── lib/responses-adapter.js  Responses ⇄ chat/completions 协议翻译
 ├── public/index.html         管理界面
+├── KNOWLEDGE.md              知识图谱 / 维护手册（改代码前必读）
 ├── data/config.json          provider 配置（本地生成，已 gitignore）
+├── data/config.json.bak      上一次保存的备份（原子写产生，已 gitignore）
 ├── data/config.example.json  脱敏样例，复制成 config.json 使用
 ├── data/requests.log         请求日志（JSONL，已 gitignore）
 ├── data/requests.log.1~.N    轮转归档（默认保留 3 份，已 gitignore）
