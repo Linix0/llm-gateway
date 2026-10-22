@@ -61,6 +61,7 @@ const DEFAULT_CFG = {
   activeModel: 'deepseek-v4.1-flash',
   modelPolicy: 'fixed',
   logs: { enabled: true, maxSizeKB: 2048, keep: 3 },
+  autoTest: { enabled: false, intervalHours: 24 },
   limits: {
     queue: true,              // 同 provider 串行排队（上游并发=1 时不再互撞 429）
     queueTimeoutMs: 120000,   // 排队最长等待，超时返回 503
@@ -107,6 +108,10 @@ function loadCfg() {
       enabled: !(raw.logs && raw.logs.enabled === false),
       maxSizeKB: clampNum((raw.logs || {}).maxSizeKB, 64, 512 * 1024, LOG_DEFAULTS.maxSizeKB),
       keep: clampNum((raw.logs || {}).keep, 1, 20, LOG_DEFAULTS.keep)
+    },
+    autoTest: {
+      enabled: !!((raw.autoTest || {}).enabled),
+      intervalHours: clampNum((raw.autoTest || {}).intervalHours, 1, 168, 24)
     },
     limits: {
       queue: !((raw.limits || {}).queue === false),
@@ -897,7 +902,9 @@ async function handleAdmin(req, res, pathname, query) {
     const p = cfg.providers.find((x) => x.id === body.provider);
     if (!p) return sendJson(res, 404, { error: { message: 'provider 不存在' } });
     if (!body.model) return sendJson(res, 400, { error: { message: '缺少 model' } });
-    return sendJson(res, 200, await testModel(p, String(body.model)));
+    const r = await testModel(p, String(body.model));
+    recordModelStatus(p.id, String(body.model), r);
+    return sendJson(res, 200, r);
   }
 
   /** 批量模型测活：串行 + 节流（上游常有并发/RPM 限制，并发打会全是 429 假失败） */
@@ -912,11 +919,32 @@ async function handleAdmin(req, res, pathname, query) {
       if (!p) {
         out.push({ provider: it.provider, model: it.model, ok: false, kind: 'err', status: 0, ms: 0, message: 'provider 不存在' });
       } else {
-        out.push(await testModel(p, String(it.model || '')));
+        const r = await testModel(p, String(it.model || ''));
+        recordModelStatus(p.id, String(it.model || ''), r);
+        out.push(r);
       }
       if (delay > 0 && i < items.length - 1) await new Promise((r) => setTimeout(r, delay));
     }
     return sendJson(res, 200, { items: out, okCount: out.filter((x) => x.ok).length });
+  }
+
+  /** 已持久化的测活结果（界面启动时回填 chip 着色） */
+  if (pathname === '/api/test/status' && method === 'GET') {
+    return sendJson(res, 200, {
+      providers: modelStatusStore.providers,
+      lastAutoTestAt: modelStatusStore.lastAutoTestAt,
+      autoTest: cfg.autoTest
+    });
+  }
+
+  /** 开关定时自动测活 */
+  if (pathname === '/api/test/auto' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    if (body.enabled !== undefined) cfg.autoTest.enabled = !!body.enabled;
+    if (body.intervalHours !== undefined) cfg.autoTest.intervalHours = clampNum(body.intervalHours, 1, 168, cfg.autoTest.intervalHours);
+    saveCfg();
+    scheduleAutoTest();
+    return sendJson(res, 200, { ok: true, autoTest: cfg.autoTest });
   }
 
   if (pathname === '/api/logs' && method === 'GET') {
@@ -1121,6 +1149,81 @@ function testModel(p, modelId) {
     upReq.write(body);
     upReq.end();
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* 测活结果持久化 + 定时自动测活                                        */
+/* ------------------------------------------------------------------ */
+
+const STATUS_PATH = path.join(DATA_DIR, 'model-status.json');
+
+function loadModelStatus() {
+  try {
+    const j = JSON.parse(fs.readFileSync(STATUS_PATH, 'utf8'));
+    return {
+      providers: j.providers && typeof j.providers === 'object' ? j.providers : {},
+      lastAutoTestAt: j.lastAutoTestAt || 0
+    };
+  } catch (_) {
+    return { providers: {}, lastAutoTestAt: 0 };
+  }
+}
+
+let modelStatusStore = loadModelStatus();
+let statusTimer = null;
+
+function saveModelStatus() {
+  try {
+    const tmp = STATUS_PATH + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(modelStatusStore), 'utf8');
+    fs.renameSync(tmp, STATUS_PATH);
+  } catch (_) { /* 失败不影响主流程 */ }
+}
+
+function scheduleStatusSave() {
+  if (statusTimer) return;
+  statusTimer = setTimeout(() => { statusTimer = null; saveModelStatus(); }, 3000);
+}
+
+/** 测活结果落盘：界面重启后仍能回看上次状态（chip 着色） */
+function recordModelStatus(providerId, modelId, r) {
+  const p = modelStatusStore.providers[providerId] || (modelStatusStore.providers[providerId] = {});
+  p[modelId] = {
+    ok: !!r.ok, kind: r.kind, status: r.status || 0, ms: r.ms || 0,
+    message: r.message || '', upstream: r.upstream || null, at: Date.now()
+  };
+  scheduleStatusSave();
+}
+
+let autoTestTimer = null;
+
+/** 自动测活：逐 provider 逐模型串行（1.2s 节流），对应上游正忙时跳过，不打扰正常流量 */
+async function runAutoTest(reason) {
+  console.log('[llm-gateway] 自动测活开始（' + reason + '）');
+  for (const p of cfg.providers) {
+    for (const m of (p.models || [])) {
+      const l = laneOf(p.id);
+      if (l.running > 0 || l.queue.length) continue; // 正忙，跳过这个模型
+      try {
+        recordModelStatus(p.id, m.id, await testModel(p, m.id));
+      } catch (_) { /* 单个失败不影响其它 */ }
+      await new Promise((rr) => setTimeout(rr, 1200));
+    }
+  }
+  modelStatusStore.lastAutoTestAt = Date.now();
+  saveModelStatus();
+  console.log('[llm-gateway] 自动测活完成');
+}
+
+function scheduleAutoTest() {
+  if (autoTestTimer) { clearInterval(autoTestTimer); autoTestTimer = null; }
+  if (!cfg.autoTest || !cfg.autoTest.enabled) return;
+  const hours = clampNum(cfg.autoTest.intervalHours, 1, 168, 24);
+  setTimeout(() => { if (cfg.autoTest && cfg.autoTest.enabled) runAutoTest('启动'); }, 90 * 1000);
+  autoTestTimer = setInterval(() => {
+    if (cfg.autoTest && cfg.autoTest.enabled) runAutoTest('定时 ' + hours + 'h');
+  }, hours * 3600 * 1000);
+  console.log(`[llm-gateway] 定时测活已开启：每 ${hours}h，上游空闲时执行`);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1464,6 +1567,7 @@ server.listen(cfg.server.port, cfg.server.host, () => {
   console.log(`[llm-gateway] listening on http://${cfg.server.host}:${cfg.server.port}`);
   console.log(`[llm-gateway] route: ${cfg.active} / ${cfg.activeModel || '(跟随客户端)'} · policy=${cfg.modelPolicy}`);
   console.log(`[llm-gateway] 管理界面: http://${cfg.server.host}:${cfg.server.port}/`);
+  scheduleAutoTest();
 });
 
 /** 优雅退出：停收新请求 → 等在途完成（最多 15s）→ 退出 */

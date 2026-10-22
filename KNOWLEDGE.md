@@ -5,7 +5,7 @@
 >
 > **维护纪律**：任何改动都必须同步更新本文件的「变更历史」与相关章节，并提交 git。
 
-- 当前版本：**v1.6.0**（见 `package.json`）
+- 当前版本：**v1.7.0**（见 `package.json`）
 - 仓库：https://github.com/Linix0/llm-gateway （Public / main / MIT）
 - 运行时：Node >= 18，**零第三方依赖**（只 `require` 内置模块）
 - 本机路径：`C:\Users\Administrator\WorkBuddy\2026-10-22-14-09-51\llm-gateway`
@@ -92,6 +92,7 @@ graph TB
 | 适配 | `handleResponsesProxy()` / `sseWrite()` | 调用 `lib/responses-adapter.js` |
 | 管理 | `handleAdmin()` | 所有 `/api/*` 端点都在这里，是一个大 `if` 链 |
 | 测活 | `testProvider()` / `testModel()` | 后者发真实请求（`max_tokens=1`） |
+| 测活持久化 | `recordModelStatus()` / `saveModelStatus()` / `runAutoTest()` / `scheduleAutoTest()` | 结果落盘 `data/model-status.json`（3s 合并原子写）；定时测活只在对应上游空闲时跑 |
 | 生命周期 | `trackRequest()` / `shutdown()` | 优雅退出：停收新请求 → 等在途 → 退出 |
 
 ---
@@ -122,6 +123,7 @@ graph TB
   "activeModel": "deepseek-v4.1-flash",
   "modelPolicy": "fixed",           // fixed=忽略客户端模型名 | auto=跟随客户端
   "logs": { "enabled": true, "maxSizeKB": 2048, "keep": 3 },
+  "autoTest": { "enabled": false, "intervalHours": 24 },  // 定时自动测活（1–168h）
   "limits": {
     "queue": true,              // 同 provider 串行排队（并发=1 的上游不再互撞 429）
     "queueTimeoutMs": 120000,   // 排队上限，超出返回 503 gateway_queue_timeout（5000–600000）
@@ -158,6 +160,8 @@ graph TB
 | POST | `/api/test` | 只查 `/models` 列表，**不调用模型** |
 | POST | `/api/test/model` | `{"provider","model"}` 真实调用测活 |
 | POST | `/api/test/models` | `{"items":[...],"delayMs":1200}` 串行批量测活 |
+| GET | `/api/test/status` | 持久化的测活结果 + `autoTest` 配置 |
+| POST | `/api/test/auto` | `{"enabled":true,"intervalHours":24}` 定时自动测活 |
 | POST | `/api/model` | 设置 `activeModel` |
 | POST | `/api/policy` | `{"policy":"fixed"\|"auto"}` |
 | GET | `/api/logs?limit=50` | 最近日志 |
@@ -233,6 +237,15 @@ curl --noproxy '*' -X POST http://127.0.0.1:8787/v1/chat/completions \
 ---
 
 ## 9. 变更历史
+
+### v1.7.0 · 测活结果持久化与定时自动测活
+
+- `recordModelStatus()`：每次测活结果落盘 `data/model-status.json`（3s 合并原子写）；
+  `GET /api/test/status` 返回，界面启动时回填，重启后 chip 仍有着色。
+- **定时自动测活**（`autoTest.enabled`，默认关）：每 `intervalHours`（默认 24h）把全部模型
+  串行测一遍（1.2s 节流），**对应上游车道正忙时跳过**，不打扰正常流量；
+  启动后 90s 先跑一次。界面供应商卡片底部有「定时测活」开关；`POST /api/test/auto`。
+- 实测：自动测活一轮 9 模型全部入账（nextapi 5 OK / agentrouter 3 net / openrouter 1 OK）。
 
 ### v1.6.0 · 请求队列与可选重试
 

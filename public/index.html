@@ -533,6 +533,11 @@
           <div class="card-foot">
             <button class="btn subtle sm" id="btnTestAll">全部测连接</button>
             <button class="btn subtle sm" id="btnTestAllModels">测所有模型</button>
+            <label class="switch" title="每隔一段时间自动测活全部模型（默认 24h，只在对应上游空闲时执行，结果落盘）">
+              <input type="checkbox" id="autoTest" />
+              <span class="track"></span>
+              定时测活
+            </label>
             <div class="grow"></div>
             <span class="hint" id="testAllHint"></span>
           </div>
@@ -1708,6 +1713,30 @@ $('#btnTestAllModels').onclick = async () => {
   }
 };
 
+/** 拉取持久化的测活结果，回填 modelStatus（重启后 chip 仍有着色） */
+async function loadTestStatus() {
+  try {
+    const r = await api('/api/test/status');
+    Object.keys(r.providers || {}).forEach((pid) => {
+      modelStatus[pid] = Object.assign(modelStatus[pid] || {}, r.providers[pid]);
+    });
+    $('#autoTest').checked = !!(r.autoTest && r.autoTest.enabled);
+    renderList();
+    paintRowsFromStatus();
+  } catch (_) { /* 静默 */ }
+}
+
+$('#autoTest').addEventListener('change', async (e) => {
+  const on = e.target.checked;
+  try {
+    await api('/api/test/auto', { method: 'POST', body: JSON.stringify({ enabled: on }) });
+    toast(on ? '已开启定时测活：每 24h 在上游空闲时自动测全部模型' : '已关闭定时测活', 'ok');
+  } catch (err) {
+    toast(err.message, 'err');
+    e.target.checked = !on;
+  }
+});
+
 $('#btnDel').onclick = async () => {
   if (!selId) return;
   const ok = await confirmBox('删除供应商「' + selId + '」？', '配置会从 data/config.json 中移除，无法撤销。若它是当前供应商，会自动切到第一个。', '删除');
@@ -1829,6 +1858,7 @@ window.addEventListener('beforeunload', (e) => {
   loadLogs();
   loadLogMeta();
   loadUsage();
+  loadTestStatus();
   startAuto(auto);
   setInterval(() => {
     if (!document.hidden) load().catch(() => {});

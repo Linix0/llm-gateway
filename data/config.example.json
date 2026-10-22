@@ -11,6 +11,7 @@
     "maxSizeKB": 2048,
     "keep": 3
   },
+  "autoTest": { "enabled": false, "intervalHours": 24 },
   "limits": {
     "queue": true,
     "queueTimeoutMs": 120000,
