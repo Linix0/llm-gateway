@@ -18,6 +18,13 @@ const path = require('path');
 const RSP = require('./lib/responses-adapter');
 
 const ROOT = __dirname;
+const APP_VERSION = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version || '0.0.0';
+  } catch (_) {
+    return '0.0.0';
+  }
+})();
 const DATA_DIR = path.join(ROOT, 'data');
 const CFG_PATH = path.join(DATA_DIR, 'config.json');
 const LOG_PATH = path.join(DATA_DIR, 'requests.log');
@@ -363,10 +370,20 @@ async function handleAdmin(req, res, pathname, query) {
     return sendJson(res, 200, {
       server: cfg.server,
       active: cfg.active,
+      runtime: {
+        version: APP_VERSION,
+        node: process.version,
+        pid: process.pid,
+        uptime: Math.round(process.uptime()),
+        startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+        requests: recent.length,
+        logFile: path.join(DATA_DIR, 'requests.log')
+      },
       providers: cfg.providers.map((p) => ({
         id: p.id, name: p.name, api: p.api, baseUrl: p.baseUrl,
         auth: { type: p.auth && p.auth.type, value: maskKey(resolveKey(p) ? ((p.auth && p.auth.value) || '') : '') },
         hasKey: !!resolveKey(p),
+        keyRef: !!(p.auth && typeof p.auth.value === 'string' && p.auth.value.startsWith('env:')),
         models: p.models
       }))
     });

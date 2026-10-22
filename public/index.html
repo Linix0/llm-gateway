@@ -1,392 +1,1126 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>LLM Gateway · 本地大模型代理</title>
 <style>
+  /* ---------- tokens ---------- */
   :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --panel-2: #1e222b;
-    --line: #2a2f3a;
-    --text: #e6e9ef;
-    --muted: #8b93a3;
-    --accent: #4f8cff;
+    --bg: #0b0d12;
+    --bg-grad: radial-gradient(1200px 500px at 15% -10%, rgba(91,140,255,.10), transparent 60%),
+               radial-gradient(900px 420px at 95% 0%, rgba(139,108,255,.08), transparent 55%);
+    --panel: #13161d;
+    --panel-2: #171b24;
+    --panel-3: #1c212b;
+    --line: #242a35;
+    --line-soft: #1d222b;
+    --text: #e9ecf2;
+    --muted: #8a93a4;
+    --dim: #626b7c;
+    --accent: #5b8cff;
+    --accent-soft: rgba(91,140,255,.14);
     --ok: #35c48a;
+    --ok-soft: rgba(53,196,138,.13);
     --warn: #e8a33d;
+    --warn-soft: rgba(232,163,61,.13);
     --err: #f0655d;
-    --radius: 10px;
+    --err-soft: rgba(240,101,93,.13);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   }
+  html[data-theme="light"] {
+    --bg: #f5f6f9;
+    --bg-grad: radial-gradient(1200px 500px at 15% -10%, rgba(91,140,255,.10), transparent 60%),
+               radial-gradient(900px 420px at 95% 0%, rgba(139,108,255,.07), transparent 55%);
+    --panel: #ffffff;
+    --panel-2: #f4f6fa;
+    --panel-3: #eceff5;
+    --line: #e2e7ef;
+    --line-soft: #edf0f5;
+    --text: #171a20;
+    --muted: #5f6879;
+    --dim: #868f9f;
+    --accent: #2f6bff;
+    --accent-soft: rgba(47,107,255,.10);
+    --ok: #0d9b6c;
+    --ok-soft: rgba(13,155,108,.10);
+    --warn: #b3760f;
+    --warn-soft: rgba(179,118,15,.10);
+    --err: #d63a30;
+    --err-soft: rgba(214,58,48,.09);
+    --shadow: 0 1px 2px rgba(20,25,40,.06), 0 10px 28px -18px rgba(20,25,40,.28);
+  }
+
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
+    margin: 0; background: var(--bg); background-image: var(--bg-grad); color: var(--text);
     font: 14px/1.55 "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
   }
   a { color: var(--accent); text-decoration: none; }
-  code, .mono { font-family: "Cascadia Code", Consolas, "JetBrains Mono", monospace; }
+  a:hover { text-decoration: underline; }
+  .mono { font-family: var(--mono); font-variant-ligatures: none; }
+  ::selection { background: var(--accent-soft); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--panel-3); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--line); background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
 
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 22px 60px; }
-
-  header.top { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  /* ---------- topbar ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 12px 22px; border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(12px) saturate(140%);
+  }
+  .brand { display: flex; align-items: center; gap: 11px; }
   .logo {
-    width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
-    background: linear-gradient(135deg, #4f8cff, #7a5cff); font-weight: 700; font-size: 15px;
+    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #5b8cff, #8b6cff); color: #fff;
+    font-weight: 700; font-size: 13px; letter-spacing: .3px;
+    box-shadow: 0 4px 14px -6px rgba(91,140,255,.9);
   }
-  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: .2px; }
-  .sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
-  .spacer { flex: 1; }
+  .brand h1 { font-size: 15.5px; font-weight: 650; margin: 0; letter-spacing: .1px; }
+  .brand .sub { color: var(--dim); font-size: 11.5px; margin-top: 1px; letter-spacing: .2px; }
+  .grow { flex: 1; }
 
-  .pill {
-    display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px;
-    border: 1px solid var(--line); border-radius: 999px; background: var(--panel); font-size: 12.5px; color: var(--muted);
+  .chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
+    font-size: 12.5px; color: var(--muted); white-space: nowrap;
   }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(53,196,138,.15); }
-  .dot.off { background: var(--err); }
+  .chip.strong { color: var(--text); }
+  .chip b { font-weight: 600; color: var(--text); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: none; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+  .dot.off { background: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+  .dot.wait { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+  .dot.pulse { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 
-  .grid { display: grid; grid-template-columns: 300px 1fr; gap: 18px; align-items: start; }
-  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-  .card h2 {
-    font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
-    margin: 0; padding: 13px 15px; border-bottom: 1px solid var(--line); font-weight: 600;
-    display: flex; align-items: center; gap: 8px;
+  /* ---------- layout ---------- */
+  .shell { max-width: 1200px; margin: 0 auto; padding: 18px 22px 8px; }
+  .grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  @media (max-width: 940px) {
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    .topbar { padding: 10px 14px; }
+    .shell { padding: 14px 14px 8px; }
   }
-  .card .body { padding: 15px; }
 
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 9px; padding: 12px 14px;
+    border-bottom: 1px solid var(--line-soft); background: linear-gradient(var(--panel), var(--panel));
+  }
+  .card-head h2 {
+    font-size: 12px; font-weight: 650; letter-spacing: .7px; text-transform: uppercase;
+    color: var(--muted); margin: 0;
+  }
+  .card-head .count {
+    font-size: 11px; color: var(--muted); background: var(--panel-3); border-radius: 999px;
+    padding: 1px 7px; font-family: var(--mono);
+  }
+  .card-body { padding: 14px; }
+  .card-foot {
+    padding: 10px 12px; border-top: 1px solid var(--line-soft); background: var(--panel-2);
+    display: flex; gap: 8px; align-items: center;
+  }
+
+  /* ---------- providers list ---------- */
+  .prov-list { list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
   .prov {
-    display: flex; align-items: center; gap: 10px; padding: 11px 13px; cursor: pointer;
-    border-bottom: 1px solid var(--line); transition: background .12s;
+    display: flex; align-items: center; gap: 10px; padding: 10px 10px; border-radius: 9px;
+    cursor: pointer; border: 1px solid transparent; transition: background .12s, border-color .12s;
   }
-  .prov:last-child { border-bottom: none; }
   .prov:hover { background: var(--panel-2); }
-  .prov.sel { background: #1b2130; box-shadow: inset 2px 0 0 var(--accent); }
-  .prov .name { font-weight: 600; font-size: 13.5px; }
-  .prov .meta { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
-  .badge {
-    font-size: 10.5px; padding: 2px 7px; border-radius: 999px; font-weight: 600; letter-spacing: .3px;
-    background: rgba(53,196,138,.14); color: var(--ok); border: 1px solid rgba(53,196,138,.3);
+  .prov.sel { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
+  .prov .pstatus { width: 6px; height: 6px; border-radius: 50%; background: var(--line); flex: none; }
+  .prov .pstatus.ok { background: var(--ok); }
+  .prov .pstatus.err { background: var(--err); }
+  .prov .pstatus.load { background: var(--warn); animation: pulse 1.2s infinite; }
+  .prov .info { flex: 1; min-width: 0; }
+  .prov .nm { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13.5px; }
+  .prov .nm span.t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prov .mt { color: var(--dim); font-size: 11.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag {
+    font-size: 10px; font-weight: 700; letter-spacing: .4px; padding: 1.5px 6px; border-radius: 5px;
+    border: 1px solid var(--line); color: var(--muted); flex: none; text-transform: uppercase;
   }
-  .badge.type { background: rgba(79,140,255,.12); color: #8fb5ff; border-color: rgba(79,140,255,.3); }
+  .tag.cur { border-color: color-mix(in srgb, var(--ok) 40%, transparent); color: var(--ok); background: var(--ok-soft); }
+  .tag.warn { border-color: color-mix(in srgb, var(--warn) 42%, transparent); color: var(--warn); background: var(--warn-soft); }
+  .tag.api-o { color: #8fb5ff; border-color: rgba(91,140,255,.32); background: var(--accent-soft); }
+  .tag.api-a { color: #c9a6ff; border-color: rgba(139,108,255,.34); background: rgba(139,108,255,.12); }
 
-  label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 5px; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .empty {
+    margin: 10px; padding: 22px 14px; text-align: center; color: var(--dim); font-size: 12.5px;
+    border: 1px dashed var(--line); border-radius: var(--radius-sm); line-height: 1.7;
+  }
+
+  /* ---------- form ---------- */
+  .section { padding: 14px; border-bottom: 1px solid var(--line-soft); }
+  .section:last-of-type { border-bottom: none; }
+  .section-title {
+    font-size: 11px; font-weight: 650; letter-spacing: .6px; text-transform: uppercase;
+    color: var(--dim); margin: 0 0 11px; display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+
+  label.f { display: block; font-size: 12px; color: var(--muted); margin: 0 0 5px; }
+  label.f .opt { color: var(--dim); font-weight: 400; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-bottom: 11px; }
+  .row:last-child { margin-bottom: 0; }
+  .row.one { grid-template-columns: 1fr; }
+  @media (max-width: 620px) { .row { grid-template-columns: 1fr; } }
+
   input, select, textarea {
-    width: 100%; background: #12151c; border: 1px solid var(--line); color: var(--text);
-    border-radius: 8px; padding: 9px 11px; font-size: 13px; outline: none; font-family: inherit;
+    width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    border-radius: var(--radius-sm); padding: 9px 11px; font-size: 13px; outline: none;
+    font-family: inherit; transition: border-color .12s, background .12s, box-shadow .12s;
   }
-  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
-  textarea { resize: vertical; min-height: 118px; font-family: "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
-
-  .btns { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 4px; }
-  button {
-    background: var(--accent); color: #fff; border: 0; padding: 9px 15px; border-radius: 8px;
-    font-size: 13px; font-weight: 600; cursor: pointer; transition: filter .12s;
+  input::placeholder, textarea::placeholder { color: var(--dim); }
+  input:hover, select:hover { border-color: color-mix(in srgb, var(--line) 60%, var(--muted)); }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--panel);
   }
-  button:hover { filter: brightness(1.08); }
-  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
-  button.danger { background: transparent; border: 1px solid rgba(240,101,93,.45); color: var(--err); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
+  input:disabled { color: var(--dim); cursor: not-allowed; background: var(--panel-3); }
+  input.mono, textarea.mono { font-family: var(--mono); font-size: 12.5px; }
 
-  .hint { color: var(--muted); font-size: 12px; margin-top: 9px; line-height: 1.6; }
+  /* ---------- model rows ---------- */
+  .models { display: flex; flex-direction: column; gap: 7px; }
+  .mrow {
+    display: grid; grid-template-columns: minmax(0,1.35fr) minmax(0,1fr) 96px 30px; gap: 7px; align-items: center;
+  }
+  .mrow input { padding: 7px 9px; font-size: 12.5px; font-family: var(--mono); }
+  .mrow input.mname { font-family: inherit; }
+  @media (max-width: 620px) { .mrow { grid-template-columns: minmax(0,1fr) 30px; } .mrow input.mname, .mrow input.mctx { display: none; } }
 
-  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  th { text-align: left; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 11.5px; text-transform: uppercase; letter-spacing: .5px; }
-  td { padding: 8px 10px; border-bottom: 1px solid #22262f; }
-  tr:last-child td { border-bottom: none; }
-  .s-2 { color: var(--ok); } .s-4 { color: var(--warn); } .s-5 { color: var(--err); }
+  .icon-btn {
+    width: 30px; height: 30px; display: grid; place-items: center; padding: 0;
+    background: transparent; border: 1px solid transparent; border-radius: 7px; color: var(--dim);
+    cursor: pointer; font-size: 13px; transition: all .12s;
+  }
+  .icon-btn:hover { color: var(--err); background: var(--err-soft); border-color: color-mix(in srgb, var(--err) 30%, transparent); }
 
+  .add-model {
+    margin-top: 8px; width: 100%; padding: 8px; border-radius: var(--radius-sm);
+    border: 1px dashed var(--line); background: transparent; color: var(--muted);
+    font-size: 12.5px; cursor: pointer; transition: all .12s;
+  }
+  .add-model:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    height: 34px; padding: 0 14px; border-radius: var(--radius-sm); border: 1px solid transparent;
+    font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+    background: var(--accent); color: #fff; transition: filter .12s, background .12s, border-color .12s, opacity .12s;
+    white-space: nowrap;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { transform: translateY(.5px); }
+  .btn.ghost { background: var(--panel-2); border-color: var(--line); color: var(--text); font-weight: 500; }
+  .btn.ghost:hover { background: var(--panel-3); filter: none; }
+  .btn.subtle { background: transparent; border-color: var(--line); color: var(--muted); font-weight: 500; }
+  .btn.subtle:hover { color: var(--text); background: var(--panel-2); }
+  .btn.danger { background: transparent; border-color: color-mix(in srgb, var(--err) 40%, transparent); color: var(--err); font-weight: 500; }
+  .btn.danger:hover { background: var(--err-soft); }
+  .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 7px; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+  .btn .spin {
+    width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor;
+    border-top-color: transparent; animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px; background: var(--panel-2); border-top: 1px solid var(--line-soft); align-items: center; }
+
+  .hint { color: var(--dim); font-size: 12px; line-height: 1.65; }
+  .hint code, .hint .mono { color: var(--muted); background: var(--panel-3); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
+  .result { margin-left: auto; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .result.ok { color: var(--ok); }
+  .result.err { color: var(--err); }
+  .result .ico { font-weight: 700; }
+
+  /* ---------- snippets ---------- */
+  .tabs { display: flex; gap: 4px; padding: 10px 12px 0; flex-wrap: wrap; }
+  .tab {
+    padding: 6px 11px; border-radius: 8px 8px 0 0; font-size: 12.5px; color: var(--muted);
+    background: transparent; border: 1px solid transparent; border-bottom: none; cursor: pointer; font-family: inherit;
+  }
+  .tab:hover { color: var(--text); background: var(--panel-2); }
+  .tab.on { color: var(--text); background: var(--panel-2); border-color: var(--line); position: relative; top: 1px; font-weight: 600; }
+  .snip-wrap { position: relative; padding: 0 12px 12px; }
   pre.snip {
-    background: #12151c; border: 1px solid var(--line); border-radius: 8px; padding: 12px;
-    overflow: auto; font-size: 12px; margin: 0; color: #c9d1e0;
+    margin: 0; padding: 13px 14px; background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 0 8px 8px 8px; overflow: auto; font-family: var(--mono); font-size: 12px; line-height: 1.7;
+    color: color-mix(in srgb, var(--text) 88%, var(--muted)); white-space: pre;
   }
-  .tag { display: inline-block; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .copy {
+    position: absolute; top: 9px; right: 20px; height: 26px; padding: 0 9px; font-size: 11.5px;
+    border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+    cursor: pointer; font-family: inherit; opacity: 0; transition: opacity .14s, color .12s;
+  }
+  .snip-wrap:hover .copy, .copy:focus-visible { opacity: 1; }
+  .copy:hover { color: var(--text); }
 
-  #toast {
-    position: fixed; right: 22px; bottom: 22px; background: var(--panel-2); border: 1px solid var(--line);
-    padding: 11px 15px; border-radius: 9px; font-size: 13px; opacity: 0; transform: translateY(8px);
-    transition: all .18s; pointer-events: none; max-width: 420px;
+  /* ---------- logs ---------- */
+  .logs-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
+  .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 2px; gap: 2px; }
+  .seg button {
+    height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--muted); font-size: 12px; cursor: pointer; font-family: inherit;
   }
-  #toast.show { opacity: 1; transform: none; }
-  #toast.ok { border-color: rgba(53,196,138,.4); }
-  #toast.err { border-color: rgba(240,101,93,.4); }
+  .seg button.on { background: var(--panel-3); color: var(--text); font-weight: 600; }
+  .switch { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+  .switch input { display: none; }
+  .track { width: 30px; height: 17px; border-radius: 999px; background: var(--panel-3); border: 1px solid var(--line); position: relative; transition: background .15s; }
+  .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--dim); transition: all .15s; }
+  .switch input:checked + .track { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .switch input:checked + .track::after { left: 15px; background: var(--accent); }
+
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 620px; }
+  th {
+    text-align: left; color: var(--dim); font-weight: 600; padding: 8px 12px; font-size: 11px;
+    letter-spacing: .5px; text-transform: uppercase; border-bottom: 1px solid var(--line-soft);
+    background: var(--panel); position: sticky; top: 0;
+  }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--panel-2); }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .st {
+    display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 12px; font-weight: 600;
+    padding: 1px 7px; border-radius: 6px;
+  }
+  .st.ok { color: var(--ok); background: var(--ok-soft); }
+  .st.warn { color: var(--warn); background: var(--warn-soft); }
+  .st.err { color: var(--err); background: var(--err-soft); }
+  .st.none { color: var(--dim); background: var(--panel-3); }
+  .prov-chip { font-size: 11.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line-soft); padding: 1px 7px; border-radius: 5px; }
+  .bars { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .bar { height: 4px; border-radius: 3px; background: var(--accent); opacity: .55; min-width: 2px; max-width: 54px; }
+
+  /* ---------- toast / modal ---------- */
+  #toasts { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }
+  .toast {
+    display: flex; align-items: flex-start; gap: 9px; min-width: 220px; max-width: 400px;
+    padding: 11px 13px; border-radius: 10px; background: var(--panel-3); border: 1px solid var(--line);
+    box-shadow: var(--shadow); font-size: 13px; animation: tin .18s ease-out;
+  }
+  @keyframes tin { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+  .toast .ico { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; flex: none; margin-top: 1px; }
+  .toast.ok { border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .toast.ok .ico { background: var(--ok-soft); color: var(--ok); }
+  .toast.err { border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+  .toast.err .ico { background: var(--err-soft); color: var(--err); }
+  .toast.info .ico { background: var(--accent-soft); color: var(--accent); }
+
+  .backdrop {
+    position: fixed; inset: 0; background: rgba(6,8,12,.62); backdrop-filter: blur(3px);
+    display: grid; place-items: center; z-index: 70; padding: 20px; animation: tin .14s ease-out;
+  }
+  .backdrop[hidden] { display: none; }
+  .modal {
+    width: 100%; max-width: 400px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; box-shadow: 0 24px 60px -20px rgba(0,0,0,.7); overflow: hidden;
+  }
+  .modal .m-body { padding: 18px 18px 6px; }
+  .modal h3 { margin: 0 0 7px; font-size: 15px; font-weight: 650; }
+  .modal p { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .modal .m-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
+
+  .page-foot {
+    max-width: 1200px; margin: 0 auto; padding: 16px 22px 34px; display: flex; gap: 14px;
+    align-items: center; flex-wrap: wrap; color: var(--dim); font-size: 12px;
+  }
+  kbd {
+    font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius: 4px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
+
+<header class="topbar">
+  <div class="brand">
     <div class="logo">LG</div>
     <div>
       <h1>LLM Gateway</h1>
       <div class="sub">本地统一入口 · 多模型自由切换</div>
     </div>
-    <div class="spacer"></div>
-    <div class="pill"><span class="dot" id="dot"></span><span id="statusText">连接中…</span></div>
-    <div class="pill mono" id="endpoint">127.0.0.1:8787</div>
-  </header>
+  </div>
+  <div class="grow"></div>
+  <div class="chips">
+    <span class="chip"><span class="dot wait pulse" id="dot"></span><span id="statusText">连接中…</span></span>
+    <button class="chip strong mono" id="endpoint" title="点击复制地址">127.0.0.1:8787</button>
+    <span class="chip" id="chipActive" title="当前 provider">当前 <b>—</b></span>
+    <span class="chip" title="聚合模型数">模型 <b id="chipModels">0</b></span>
+    <button class="chip" id="btnTheme" title="切换主题" aria-label="切换主题">◐</button>
+  </div>
+</header>
 
+<div class="shell">
   <div class="grid">
-    <div class="card">
-      <h2>Providers <span class="spacer"></span><button class="ghost" id="btnNew" style="padding:4px 9px;font-size:12px">+ 新增</button></h2>
-      <div id="list"></div>
+    <!-- 左：provider 列表 -->
+    <div class="col">
+      <div class="card">
+        <div class="card-head">
+          <h2>Providers</h2>
+          <span class="count" id="provCount">0</span>
+          <div class="grow"></div>
+          <button class="btn ghost sm" id="btnNew">+ 新增</button>
+        </div>
+        <ul class="prov-list" id="list">
+          <li class="empty">加载中…</li>
+        </ul>
+        <div class="card-foot">
+          <button class="btn subtle sm" id="btnTestAll">全部测活</button>
+          <div class="grow"></div>
+          <span class="hint" id="testAllHint"></span>
+        </div>
+      </div>
     </div>
 
-    <div>
+    <!-- 右：编辑 + 接入 -->
+    <div class="col">
       <div class="card">
-        <h2 id="formTitle">编辑 Provider</h2>
-        <div class="body">
+        <div class="card-head">
+          <h2 id="formTitle">编辑 Provider</h2>
+          <span class="tag warn" id="dirtyTag" hidden>未保存</span>
+          <div class="grow"></div>
+          <span class="hint mono" id="editorId"></span>
+        </div>
+
+        <div class="section">
+          <div class="section-title">基本信息</div>
           <div class="row">
             <div>
-              <label>ID（路由用，唯一）</label>
-              <input id="f_id" placeholder="nextapi" />
+              <label class="f" for="f_id">ID <span class="opt">（路由用，唯一，创建后不可改）</span></label>
+              <input id="f_id" class="mono" placeholder="nextapi" autocomplete="off" />
             </div>
             <div>
-              <label>显示名称</label>
-              <input id="f_name" placeholder="NextApi" />
+              <label class="f" for="f_name">显示名称</label>
+              <input id="f_name" placeholder="NextApi" autocomplete="off" />
             </div>
           </div>
           <div class="row">
             <div>
-              <label>协议类型</label>
+              <label class="f" for="f_api">协议类型</label>
               <select id="f_api">
-                <option value="openai">OpenAI 兼容（/v1/chat、/v1/responses）</option>
-                <option value="anthropic">Anthropic（/v1/messages）</option>
+                <option value="openai">OpenAI 兼容 · /v1/chat · /v1/responses</option>
+                <option value="anthropic">Anthropic · /v1/messages</option>
               </select>
             </div>
             <div>
-              <label>Base URL</label>
-              <input id="f_base" placeholder="https://api.example.com/v1" />
+              <label class="f" for="f_base">Base URL</label>
+              <input id="f_base" class="mono" placeholder="https://api.example.com/v1" autocomplete="off" />
             </div>
           </div>
-          <div style="margin-bottom:12px">
-            <label>API Key（支持 <span class="mono">env:变量名</span> 引用环境变量）</label>
-            <input id="f_key" placeholder="sk-... 或 env:MY_KEY" />
+        </div>
+
+        <div class="section">
+          <div class="section-title">鉴权</div>
+          <div>
+            <label class="f" for="f_key">API Key <span class="opt">（支持 <span class="mono">env:变量名</span> 引用环境变量）</span></label>
+            <input id="f_key" class="mono" type="text" placeholder="sk-… 或 env:NEXTAPI_API_KEY" autocomplete="off" spellcheck="false" />
+            <div class="hint" id="keyHint" style="margin-top:6px"></div>
           </div>
-          <div style="margin-bottom:12px">
-            <label>模型列表（每行 <span class="mono">模型ID | 显示名 | 上下文</span>，后两项可省）</label>
-            <textarea id="f_models" placeholder="deepseek-v4.1-flash | DeepSeek V4.1 Flash | 128000"></textarea>
+        </div>
+
+        <div class="section">
+          <div class="section-title">模型列表 <span class="count" id="modelCount">0</span></div>
+          <div class="models" id="modelRows"></div>
+          <button class="add-model" id="btnAddModel">+ 添加模型</button>
+          <div class="hint" style="margin-top:9px">
+            上下文窗口留空则用上游默认值；填 <span class="mono">262144</span> 这类数字会写进 <span class="mono">/v1/models</span> 与 Codex 目录。
           </div>
-          <div class="btns">
-            <button id="btnSave">保存</button>
-            <button class="ghost" id="btnActive">设为当前</button>
-            <button class="ghost" id="btnTest">测试连接</button>
-            <button class="danger" id="btnDel">删除</button>
-          </div>
-          <div class="hint" id="testResult"></div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="btnSave">保存</button>
+          <button class="btn ghost" id="btnActive">设为当前</button>
+          <button class="btn ghost" id="btnTest">测试连接</button>
+          <button class="btn danger" id="btnDel" style="margin-left:auto">删除</button>
+          <span class="result" id="testResult"></span>
         </div>
       </div>
 
-      <div class="card" style="margin-top:18px">
-        <h2>客户端接入</h2>
-        <div class="body">
-          <div class="tag">Codex（~/.codex/config.toml）</div>
-          <pre class="snip" id="snipCodex"></pre>
-          <div class="tag" style="margin-top:14px">Cursor / 任意 OpenAI 兼容客户端</div>
-          <pre class="snip" id="snipCursor"></pre>
-          <div class="tag" style="margin-top:14px">路由规则</div>
-          <div class="hint" style="margin-top:0">
-            · 模型名用 <span class="mono">providerId/modelId</span> → 精确指定走哪个上游<br />
-            · 模型名只被某一个 provider 声明 → 自动路由到它<br />
-            · 其他情况 → 走「当前」provider（key 由网关注入，客户端随便填）
+      <!-- 客户端接入 -->
+      <div class="card">
+        <div class="card-head">
+          <h2>客户端接入</h2>
+          <div class="grow"></div>
+          <span class="hint">真实 key 由网关注入，客户端随便填</span>
+        </div>
+        <div class="tabs" id="tabs">
+          <button class="tab on" data-k="codex">Codex</button>
+          <button class="tab" data-k="cursor">Cursor</button>
+          <button class="tab" data-k="curl">cURL</button>
+          <button class="tab" data-k="claude">Claude Code</button>
+        </div>
+        <div class="snip-wrap">
+          <pre class="snip" id="snip"></pre>
+          <button class="copy" id="btnCopySnip">复制</button>
+        </div>
+        <div class="section" style="border-top:1px solid var(--line-soft)">
+          <div class="section-title">路由规则</div>
+          <div class="hint">
+            ① 模型名写 <span class="mono">providerId/modelId</span> → 精确指定上游<br />
+            ② 模型名只被某一个 provider 声明 → 自动路由到它<br />
+            ③ 其余情况 → 走「当前」provider
           </div>
         </div>
       </div>
     </div>
   </div>
+</div>
 
-  <div class="card" style="margin-top:18px">
-    <h2>请求日志 <span class="spacer"></span><button class="ghost" id="btnLogs" style="padding:4px 9px;font-size:12px">刷新</button></h2>
-    <div class="body" style="padding:0">
+<!-- 请求日志 -->
+<div class="shell" style="padding-top:0">
+  <div class="card">
+    <div class="card-head">
+      <h2>请求日志</h2>
+      <span class="count" id="logCount">0</span>
+      <div class="grow"></div>
+      <div class="seg" id="logFilter">
+        <button class="on" data-f="all">全部</button>
+        <button data-f="err">仅失败</button>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="autoRefresh" checked />
+        <span class="track"></span>
+        自动刷新
+      </label>
+      <button class="btn ghost sm" id="btnLogs">刷新</button>
+    </div>
+    <div class="tbl-wrap">
       <table>
-        <thead><tr><th style="width:70px">状态</th><th style="width:130px">Provider</th><th>模型</th><th style="width:180px">路径</th><th style="width:80px">耗时</th><th style="width:90px">时间</th></tr></thead>
-        <tbody id="logs"><tr><td colspan="6" style="color:var(--muted)">暂无请求</td></tr></tbody>
+        <thead>
+          <tr>
+            <th style="width:84px">状态</th>
+            <th style="width:120px">Provider</th>
+            <th>模型</th>
+            <th style="width:170px">路径</th>
+            <th style="width:120px">耗时</th>
+            <th style="width:84px">时间</th>
+          </tr>
+        </thead>
+        <tbody id="logs">
+          <tr><td colspan="6" class="hint" style="padding:22px 12px;text-align:center">暂无请求</td></tr>
+        </tbody>
       </table>
     </div>
   </div>
 </div>
 
-<div id="toast"></div>
+<div class="page-foot">
+  <span id="footRuntime">—</span>
+  <span class="grow"></span>
+  <span><kbd>Ctrl</kbd> + <kbd>S</kbd> 保存</span>
+  <a href="https://github.com/Linix0/llm-gateway" target="_blank" rel="noreferrer">GitHub ↗</a>
+</div>
+
+<div id="toasts"></div>
+
+<div class="backdrop" id="backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="m-body">
+      <h3 id="mTitle">确认</h3>
+      <p id="mDesc"></p>
+    </div>
+    <div class="m-actions">
+      <button class="btn ghost" id="mCancel">取消</button>
+      <button class="btn danger" id="mOk">确定</button>
+    </div>
+  </div>
+</div>
 
 <script>
+'use strict';
+/* ------------------------------------------------------------------ */
+/* 状态                                                                */
+/* ------------------------------------------------------------------ */
 const $ = (s) => document.querySelector(s);
-let state = { providers: [], active: '' };
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+let state = { server: { host: '127.0.0.1', port: 8787 }, providers: [], active: '', runtime: {} };
 let selId = null;
 let isNew = false;
+let dirty = false;
+let clearKey = false;
+let provStatus = {};      // id -> 'ok' | 'err' | 'load'
+let logs = [];
+let logFilter = 'all';
+let snipKey = 'codex';
+let autoTimer = null;
 
-function toast(msg, cls) {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.className = 'show ' + (cls || '');
-  clearTimeout(t._t);
-  t._t = setTimeout(() => (t.className = ''), 2600);
+const LS_THEME = 'lg.theme';
+const LS_AUTO = 'lg.autorefresh';
+
+/* ------------------------------------------------------------------ */
+/* 工具                                                                */
+/* ------------------------------------------------------------------ */
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 async function api(path, opts) {
   const r = await fetch(path, Object.assign({ headers: { 'content-type': 'application/json' } }, opts));
-  const j = await r.json().catch(() => ({}));
+  let j = {};
+  try { j = await r.json(); } catch (_) {}
   if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
   return j;
 }
 
-function parseModels(text) {
-  return text.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
-    const [id, name, ctx] = line.split('|').map(s => (s || '').trim());
-    const m = { id };
-    if (name) m.name = name;
-    if (ctx && !isNaN(Number(ctx))) m.contextWindow = Number(ctx);
-    return m;
-  }).filter(m => m.id);
+function toast(msg, kind) {
+  const box = $('#toasts');
+  const el = document.createElement('div');
+  el.className = 'toast ' + (kind || 'info');
+  const ico = kind === 'ok' ? '✓' : kind === 'err' ? '!' : 'i';
+  el.innerHTML = `<span class="ico">${ico}</span><span>${escapeHtml(msg)}</span>`;
+  box.appendChild(el);
+  setTimeout(() => {
+    el.style.transition = 'opacity .2s, transform .2s';
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(6px)';
+    setTimeout(() => el.remove(), 220);
+  }, 2800);
 }
 
-function modelsToText(models) {
-  return (models || []).map(m => [m.id, m.name || '', m.contextWindow || ''].join(' | ').replace(/\s\|\s\|\s$/, '')).join('\n');
+function copyText(text) {
+  const done = () => toast('已复制到剪贴板', 'ok');
+  if (navigator.clipboard && window.isSecureContext !== false) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;opacity:0;top:0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch (_) { toast('复制失败，请手动选取', 'err'); }
+  ta.remove();
 }
 
+function fmtUptime(sec) {
+  if (!sec && sec !== 0) return '—';
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d) return `${d}天${h}小时`;
+  if (h) return `${h}小时${m}分`;
+  if (m) return `${m}分${sec % 60}秒`;
+  return `${Math.max(1, Math.round(sec))}秒`;
+}
+
+function confirmBox(title, desc, okText) {
+  return new Promise((resolve) => {
+    $('#mTitle').textContent = title;
+    $('#mDesc').textContent = desc || '';
+    $('#mOk').textContent = okText || '确定';
+    const bd = $('#backdrop');
+    bd.hidden = false;
+    const close = (v) => { bd.hidden = true; $('#mOk').onclick = null; $('#mCancel').onclick = null; document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = (e) => { if (e.key === 'Escape') close(false); if (e.key === 'Enter') close(true); };
+    $('#mOk').onclick = () => close(true);
+    $('#mCancel').onclick = () => close(false);
+    document.addEventListener('keydown', onKey);
+    setTimeout(() => $('#mCancel').focus(), 30);
+  });
+}
+
+function setDirty(v) {
+  dirty = v;
+  $('#dirtyTag').hidden = !v;
+}
+
+/* ------------------------------------------------------------------ */
+/* 渲染：provider 列表                                                  */
+/* ------------------------------------------------------------------ */
 function renderList() {
   const el = $('#list');
-  if (!state.providers.length) { el.innerHTML = '<div style="padding:15px;color:var(--muted)">还没有配置，点右上角新增</div>'; return; }
-  el.innerHTML = state.providers.map(p => `
-    <div class="prov ${p.id === selId ? 'sel' : ''}" data-id="${p.id}">
-      <div style="flex:1;min-width:0">
-        <div class="name">${escapeHtml(p.name || p.id)}</div>
-        <div class="meta mono">${escapeHtml(p.baseUrl)}</div>
+  $('#provCount').textContent = state.providers.length;
+  if (!state.providers.length) {
+    el.innerHTML = '<li class="empty">还没有配置<br />点右上角「+ 新增」加一个上游</li>';
+    return;
+  }
+  el.innerHTML = state.providers.map((p) => {
+    const st = provStatus[p.id] || '';
+    const models = (p.models || []).length;
+    const tags = [
+      p.id === state.active ? '<span class="tag cur">当前</span>' : '',
+      p.api === 'anthropic' ? '<span class="tag api-a">A</span>' : '<span class="tag api-o">O</span>',
+      p.hasKey ? '' : '<span class="tag warn">无 KEY</span>'
+    ].join('');
+    return `<li class="prov ${p.id === selId ? 'sel' : ''}" data-id="${escapeHtml(p.id)}" role="button" tabindex="0">
+      <span class="pstatus ${st}"></span>
+      <div class="info">
+        <div class="nm"><span class="t">${escapeHtml(p.name || p.id)}</span>${tags}</div>
+        <div class="mt mono">${escapeHtml(p.baseUrl)} · ${models} 个模型</div>
       </div>
-      ${p.id === state.active ? '<span class="badge">当前</span>' : ''}
-      <span class="badge type">${p.api === 'anthropic' ? 'A' : 'O'}</span>
-    </div>`).join('');
-  el.querySelectorAll('.prov').forEach(n => n.onclick = () => select(n.dataset.id));
+    </li>`;
+  }).join('');
+
+  el.querySelectorAll('.prov').forEach((n) => {
+    const go = () => selectProvider(n.dataset.id);
+    n.onclick = go;
+    n.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+  });
 }
 
-function escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/* ------------------------------------------------------------------ */
+/* 渲染：模型行                                                        */
+/* ------------------------------------------------------------------ */
+function addModelRow(m) {
+  const row = document.createElement('div');
+  row.className = 'mrow';
+  row.innerHTML = `
+    <input class="mid mono" placeholder="模型 ID" value="${escapeHtml(m && m.id ? m.id : '')}" autocomplete="off" spellcheck="false" />
+    <input class="mname" placeholder="显示名（可选）" value="${escapeHtml(m && m.name ? m.name : '')}" autocomplete="off" />
+    <input class="mctx mono" placeholder="上下文" inputmode="numeric" value="${escapeHtml(m && m.contextWindow ? m.contextWindow : '')}" autocomplete="off" />
+    <button class="icon-btn" title="删除这一行" aria-label="删除这一行">✕</button>`;
+  row.querySelector('.icon-btn').onclick = () => {
+    row.remove();
+    if (!$$('#modelRows .mrow').length) addModelRow();
+    updateModelCount();
+    setDirty(true);
+  };
+  row.querySelectorAll('input').forEach((i) => (i.oninput = () => setDirty(true)));
+  $('#modelRows').appendChild(row);
+  updateModelCount();
 }
 
-function select(id) {
-  selId = id;
-  isNew = false;
-  const p = state.providers.find(x => x.id === id);
-  if (!p) return;
-  $('#formTitle').textContent = '编辑 Provider · ' + p.id;
-  $('#f_id').value = p.id;
-  $('#f_id').disabled = true;
-  $('#f_name').value = p.name || '';
-  $('#f_api').value = p.api || 'openai';
-  $('#f_base').value = p.baseUrl || '';
-  $('#f_key').value = p.auth && p.auth.value ? p.auth.value : '';
-  $('#f_models').value = modelsToText(p.models);
-  $('#testResult').textContent = '';
-  $('#btnDel').disabled = state.providers.length <= 1;
-  $('#btnActive').disabled = p.id === state.active;
-  renderList();
+function updateModelCount() {
+  const n = $$('#modelRows .mrow').filter((r) => r.querySelector('.mid').value.trim()).length;
+  $('#modelCount').textContent = n;
+}
+
+function modelsFromRows() {
+  return $$('#modelRows .mrow').map((r) => {
+    const id = r.querySelector('.mid').value.trim();
+    if (!id) return null;
+    const name = r.querySelector('.mname').value.trim();
+    const ctxRaw = r.querySelector('.mctx').value.trim();
+    const m = { id };
+    if (name) m.name = name;
+    if (ctxRaw && !isNaN(Number(ctxRaw))) m.contextWindow = Number(ctxRaw);
+    return m;
+  }).filter(Boolean);
+}
+
+function setModelRows(models) {
+  const box = $('#modelRows');
+  box.innerHTML = '';
+  (models && models.length ? models : [{}]).forEach((m) => addModelRow(m));
+  updateModelCount();
+}
+
+/* ------------------------------------------------------------------ */
+/* 表单                                                               */
+/* ------------------------------------------------------------------ */
+function selectProvider(id) {
+  if (id === selId) return;
+  const go = () => {
+    const p = state.providers.find((x) => x.id === id);
+    if (!p) return;
+    selId = id;
+    isNew = false;
+    clearKey = false;
+    setDirty(false);
+    $('#formTitle').textContent = '编辑 Provider';
+    $('#editorId').textContent = p.id;
+    $('#f_id').value = p.id;
+    $('#f_id').disabled = true;
+    $('#f_name').value = p.name || '';
+    $('#f_api').value = p.api || 'openai';
+    $('#f_base').value = p.baseUrl || '';
+    $('#f_key').value = '';
+    $('#f_key').placeholder = p.hasKey
+      ? '已保存 ' + (p.auth && p.auth.value ? p.auth.value : '****') + ' · 留空表示不修改'
+      : 'sk-… 或 env:NEXTAPI_API_KEY';
+    $('#keyHint').innerHTML = p.keyRef
+      ? '当前用环境变量引用，key 不存在配置文件里。'
+      : p.hasKey
+        ? '想换 key 直接覆盖输入；留空保存不会改动已存的 key。'
+        : '尚未配置 key，该 provider 的请求会返回 401。';
+    setModelRows(p.models || []);
+    $('#testResult').className = 'result';
+    $('#testResult').textContent = '';
+    $('#btnDel').disabled = state.providers.length <= 1;
+    $('#btnActive').disabled = p.id === state.active;
+    renderList();
+    updateSnippets();
+  };
+  if (dirty) {
+    confirmBox('放弃未保存的修改？', '当前表单有未保存的改动，切换 provider 会丢失它们。', '放弃修改').then((ok) => { if (ok) go(); });
+  } else {
+    go();
+  }
 }
 
 function newProvider() {
-  isNew = true;
-  selId = null;
-  $('#formTitle').textContent = '新增 Provider';
-  ['#f_id', '#f_name', '#f_base', '#f_key', '#f_models'].forEach(s => ($(s).value = ''));
-  $('#f_id').disabled = false;
-  $('#f_api').value = 'openai';
-  $('#testResult').textContent = '';
-  renderList();
+  const go = () => {
+    selId = null;
+    isNew = true;
+    clearKey = false;
+    setDirty(false);
+    $('#formTitle').textContent = '新增 Provider';
+    $('#editorId').textContent = '未保存';
+    $('#f_id').disabled = false;
+    $('#f_id').value = '';
+    $('#f_name').value = '';
+    $('#f_api').value = 'openai';
+    $('#f_base').value = '';
+    $('#f_key').value = '';
+    $('#f_key').placeholder = 'sk-… 或 env:NEXTAPI_API_KEY';
+    $('#keyHint').innerHTML = '建议写 <span class="mono">env:变量名</span>，避免明文 key 落在配置文件里。';
+    setModelRows([{}]);
+    $('#testResult').className = 'result';
+    $('#testResult').textContent = '';
+    $('#btnDel').disabled = true;
+    $('#btnActive').disabled = true;
+    renderList();
+    $('#f_id').focus();
+  };
+  if (dirty) {
+    confirmBox('放弃未保存的修改？', '当前表单有未保存的改动，新增 provider 会丢失它们。', '放弃修改').then((ok) => { if (ok) go(); });
+  } else {
+    go();
+  }
 }
 
-async function load() {
-  const s = await api('/api/state');
-  state = s;
-  $('#endpoint').textContent = s.server.host + ':' + s.server.port;
-  $('#dot').className = 'dot on';
-  $('#statusText').textContent = '运行中 · 当前 ' + (s.active || '-');
-  const act = s.providers.find(p => p.id === s.active);
-  $('#snipCodex').textContent =
-`[model_providers.localgateway]
-name = "localgateway"
-base_url = "http://${s.server.host}:${s.server.port}/v1"
-wire_api = "responses"
-experimental_bearer_token = "local"
-requires_openai_auth = false
-
-# 顶部两行改成本地网关
-model = "${act && act.models[0] ? act.models[0].id : 'deepseek-v4.1-flash'}"
-model_provider = "localgateway"`;
-  $('#snipCursor').textContent =
-`Base URL: http://${s.server.host}:${s.server.port}/v1
-API Key : local        # 任意填，真实 key 由网关注入
-Model   : ${act && act.models[0] ? act.models[0].id : 'deepseek-v4.1-flash'}`;
-  renderList();
-  if (!selId && s.providers.length) select(s.active || s.providers[0].id);
-}
-
-async function save() {
+function collectForm() {
+  const id = $('#f_id').value.trim();
   const body = {
-    id: $('#f_id').value.trim(),
-    name: $('#f_name').value.trim() || $('#f_id').value.trim(),
+    id,
+    name: $('#f_name').value.trim() || id,
     api: $('#f_api').value,
     baseUrl: $('#f_base').value.trim(),
-    models: parseModels($('#f_models').value)
+    models: modelsFromRows()
   };
   const key = $('#f_key').value.trim();
   if (key) body.auth = { type: 'bearer', value: key };
-  if (!body.id || !body.baseUrl) return toast('ID 和 Base URL 必填', 'err');
-  try {
-    await api('/api/providers', { method: 'POST', body: JSON.stringify(body) });
-    toast('已保存', 'ok');
-    await load();
-    select(body.id);
-  } catch (e) { toast(e.message, 'err'); }
+  return body;
 }
 
-$('#btnSave').onclick = save;
-$('#btnNew').onclick = newProvider;
-$('#btnActive').onclick = async () => {
-  if (!selId) return;
-  try { await api('/api/active', { method: 'POST', body: JSON.stringify({ id: selId }) }); toast('已切换为当前 provider', 'ok'); await load(); select(selId); }
-  catch (e) { toast(e.message, 'err'); }
-};
-$('#btnTest').onclick = async () => {
-  if (!selId) {
-    if (isNew) return toast('先保存再测试', 'err');
+/* ------------------------------------------------------------------ */
+/* 数据加载                                                            */
+/* ------------------------------------------------------------------ */
+async function load() {
+  const s = await api('/api/state');
+  state = s;
+  const addr = s.server.host + ':' + s.server.port;
+  $('#endpoint').textContent = addr;
+  $('#dot').className = 'dot on';
+  $('#statusText').textContent = '运行中 · 已运行 ' + fmtUptime(s.runtime && s.runtime.uptime);
+  $('#chipActive').innerHTML = '当前 <b>' + escapeHtml(s.active || '—') + '</b>';
+  const total = new Set();
+  s.providers.forEach((p) => (p.models || []).forEach((m) => total.add(m.id)));
+  $('#chipModels').textContent = total.size;
+  const rt = s.runtime || {};
+  $('#footRuntime').textContent = `v${rt.version || '—'} · Node ${rt.node || '—'} · PID ${rt.pid || '—'} · 启动于 ${(rt.startedAt || '').replace('T', ' ').slice(0, 19)}`;
+  renderList();
+  updateSnippets();
+  if (isNew) return;
+  if (!selId || !s.providers.some((p) => p.id === selId)) {
+    const first = s.active || (s.providers[0] && s.providers[0].id);
+    if (first) selectProvider(first);
+  } else {
+    const p = s.providers.find((x) => x.id === selId);
+    if (p) {
+      $('#f_name').value = p.name || '';
+      $('#f_api').value = p.api || 'openai';
+      $('#f_base').value = p.baseUrl || '';
+      $('#btnActive').disabled = p.id === state.active;
+    }
+  }
+}
+
+async function save() {
+  const body = collectForm();
+  if (!body.id) return toast('ID 必填', 'err');
+  if (!/^[A-Za-z0-9._-]+$/.test(body.id)) return toast('ID 只能用字母、数字、点、下划线、短横线', 'err');
+  if (!body.baseUrl) return toast('Base URL 必填', 'err');
+  if (!/^https?:\/\//i.test(body.baseUrl)) return toast('Base URL 需以 http:// 或 https:// 开头', 'err');
+  if (!body.models.length) return toast('至少填一个模型', 'err');
+
+  const btn = $('#btnSave');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> 保存中';
+  try {
+    await api('/api/providers', { method: 'POST', body: JSON.stringify(body) });
+    const wasNew = isNew;
+    isNew = false;
+    selId = body.id;
+    setDirty(false);
+    await load();
+    toast(wasNew ? '已新增 provider' : '已保存', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '保存';
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 接入片段                                                            */
+/* ------------------------------------------------------------------ */
+function currentProv() {
+  return state.providers.find((p) => p.id === state.active) || state.providers[0] || null;
+}
+function firstModel() {
+  const p = currentProv();
+  return (p && p.models && p.models[0] && p.models[0].id) || 'deepseek-v4.1-flash';
+}
+function updateSnippets() {
+  const s = state.server || { host: '127.0.0.1', port: 8787 };
+  const base = `http://${s.host}:${s.port}`;
+  const model = firstModel();
+  const map = {
+    codex: `# ~/.codex/config.toml
+model = "${model}"
+model_provider = "localgateway"
+
+[model_providers.localgateway]
+name = "localgateway"
+base_url = "${base}/v1"
+wire_api = "responses"
+experimental_bearer_token = "local"   # 随便填，真实 key 由网关注入
+requires_openai_auth = false`,
+    cursor: `Base URL : ${base}/v1
+API Key  : local        # 任意值
+Model    : ${model}`,
+    curl: `curl ${base}/v1/chat/completions \\
+  -H "content-type: application/json" \\
+  -d '{"model":"${model}","messages":[{"role":"user","content":"你好"}]}'`,
+    claude: `# 环境变量方式（Claude Code）
+export ANTHROPIC_BASE_URL=${base}
+export ANTHROPIC_AUTH_TOKEN=local
+export ANTHROPIC_MODEL=${model}`
+  };
+  $('#snip').textContent = map[snipKey] || '';
+}
+
+/* ------------------------------------------------------------------ */
+/* 日志                                                               */
+/* ------------------------------------------------------------------ */
+function renderLogs() {
+  const tb = $('#logs');
+  const rows = logFilter === 'err'
+    ? logs.filter((i) => !i.status || i.status >= 400)
+    : logs;
+  $('#logCount').textContent = rows.length;
+  if (!rows.length) {
+    tb.innerHTML = `<tr><td colspan="6" class="hint" style="padding:22px 12px;text-align:center">${
+      logFilter === 'err' ? '没有失败的请求' : '暂无请求'
+    }</td></tr>`;
     return;
   }
-  $('#testResult').textContent = '测试中…';
-  try {
-    const r = await api('/api/test', { method: 'POST', body: JSON.stringify({ id: selId }) });
-    if (r.ok) $('#testResult').innerHTML = `<span style="color:var(--ok)">✓ 连接正常（HTTP ${r.status}${r.models != null ? '，' + r.models + ' 个模型' : ''}）</span>`;
-    else $('#testResult').innerHTML = `<span style="color:var(--err)">✗ HTTP ${r.status}：${escapeHtml(r.message || '')}</span>`;
-  } catch (e) { $('#testResult').innerHTML = `<span style="color:var(--err)">✗ ${escapeHtml(e.message)}</span>`; }
-};
-$('#btnDel').onclick = async () => {
-  if (!selId || !confirm('确认删除 provider「' + selId + '」？')) return;
-  try { await api('/api/providers/' + encodeURIComponent(selId), { method: 'DELETE' }); toast('已删除', 'ok'); selId = null; await load(); }
-  catch (e) { toast(e.message, 'err'); }
-};
+  const maxMs = Math.max.apply(null, rows.map((i) => i.ms || 0).concat([1]));
+  tb.innerHTML = rows.map((i) => {
+    const s = i.status || 0;
+    const cls = !s ? 'none' : s >= 500 ? 'err' : s >= 400 ? 'warn' : 'ok';
+    const label = s ? s : '—';
+    const w = Math.max(2, Math.round(((i.ms || 0) / maxMs) * 54));
+    return `<tr>
+      <td><span class="st ${cls}">${label}</span></td>
+      <td>${i.provider ? `<span class="prov-chip mono">${escapeHtml(i.provider)}</span>` : '<span class="hint">—</span>'}</td>
+      <td class="mono" style="color:var(--text)">${escapeHtml(i.model || '—')}</td>
+      <td class="mono hint">${escapeHtml(i.path || '')}</td>
+      <td><div class="bars"><span class="bar" style="width:${w}px;${cls === 'err' ? 'background:var(--err)' : cls === 'warn' ? 'background:var(--warn)' : ''}"></span><span class="num hint">${i.ms != null ? i.ms + ' ms' : '—'}</span></div></td>
+      <td class="num hint">${(i.ts || '').slice(11, 19)}</td>
+    </tr>`;
+  }).join('');
+}
 
 async function loadLogs() {
   try {
-    const r = await api('/api/logs?limit=30');
-    const tb = $('#logs');
-    if (!r.items.length) { tb.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">暂无请求</td></tr>'; return; }
-    tb.innerHTML = r.items.map(i => {
-      const cls = i.status >= 500 ? 's-5' : i.status >= 400 ? 's-4' : 's-2';
-      return `<tr>
-        <td class="${cls} mono">${i.status || '-'}</td>
-        <td class="mono">${escapeHtml(i.provider || '-')}</td>
-        <td class="mono">${escapeHtml(i.model || '-')}</td>
-        <td class="mono" style="color:var(--muted)">${escapeHtml(i.path || '')}</td>
-        <td class="mono">${i.ms != null ? i.ms + 'ms' : '-'}</td>
-        <td class="mono" style="color:var(--muted)">${(i.ts || '').slice(11, 19)}</td>
-      </tr>`;
-    }).join('');
-  } catch (e) { /* 日志失败静默 */ }
+    const r = await api('/api/logs?limit=50');
+    logs = r.items || [];
+    renderLogs();
+  } catch (_) { /* 静默 */ }
 }
-$('#btnLogs').onclick = loadLogs;
 
-load().catch(e => { $('#dot').className = 'dot off'; $('#statusText').textContent = '网关未连接'; });
-loadLogs();
-setInterval(loadLogs, 5000);
+/* ------------------------------------------------------------------ */
+/* 事件                                                               */
+/* ------------------------------------------------------------------ */
+$('#btnSave').onclick = save;
+$('#btnNew').onclick = newProvider;
+$('#btnAddModel').onclick = () => { addModelRow(); setDirty(true); };
+
+['#f_id', '#f_name', '#f_api', '#f_base', '#f_key'].forEach((sel) => {
+  $(sel).addEventListener('input', () => setDirty(true));
+  $(sel).addEventListener('change', () => setDirty(true));
+});
+
+$('#btnActive').onclick = async () => {
+  if (!selId) return;
+  const btn = $('#btnActive');
+  btn.disabled = true;
+  try {
+    await api('/api/active', { method: 'POST', body: JSON.stringify({ id: selId }) });
+    toast('已切换为当前 provider：' + selId, 'ok');
+    await load();
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$('#btnTest').onclick = async () => {
+  if (isNew) return toast('先保存再测试连接', 'err');
+  if (!selId) return;
+  const btn = $('#btnTest');
+  const out = $('#testResult');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> 测试中';
+  out.className = 'result';
+  out.textContent = '';
+  provStatus[selId] = 'load';
+  renderList();
+  try {
+    const r = await api('/api/test', { method: 'POST', body: JSON.stringify({ id: selId }) });
+    if (r.ok) {
+      provStatus[selId] = 'ok';
+      out.className = 'result ok';
+      out.innerHTML = `<span class="ico">✓</span> 连接正常 · HTTP ${r.status}${r.models != null ? ' · ' + r.models + ' 个模型' : ''}`;
+    } else {
+      provStatus[selId] = 'err';
+      out.className = 'result err';
+      out.innerHTML = `<span class="ico">✗</span> ${escapeHtml(r.status ? 'HTTP ' + r.status : '连接失败')}${r.message ? ' · ' + escapeHtml(String(r.message).slice(0, 120)) : ''}`;
+    }
+  } catch (e) {
+    provStatus[selId] = 'err';
+    out.className = 'result err';
+    out.innerHTML = `<span class="ico">✗</span> ${escapeHtml(e.message)}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '测试连接';
+    renderList();
+  }
+};
+
+$('#btnTestAll').onclick = async () => {
+  if (!state.providers.length) return;
+  const btn = $('#btnTestAll');
+  btn.disabled = true;
+  $('#testAllHint').textContent = '检测中…';
+  const results = [];
+  for (const p of state.providers) {
+    provStatus[p.id] = 'load';
+    renderList();
+    try {
+      const r = await api('/api/test', { method: 'POST', body: JSON.stringify({ id: p.id }) });
+      provStatus[p.id] = r.ok ? 'ok' : 'err';
+      results.push({ id: p.id, ok: !!r.ok, status: r.status, msg: r.message });
+    } catch (e) {
+      provStatus[p.id] = 'err';
+      results.push({ id: p.id, ok: false, msg: e.message });
+    }
+    renderList();
+  }
+  btn.disabled = false;
+  const okN = results.filter((r) => r.ok).length;
+  $('#testAllHint').textContent = `${okN}/${results.length} 可用`;
+  if (okN === results.length) toast('全部 provider 连接正常', 'ok');
+  else toast(results.filter((r) => !r.ok).map((r) => r.id).join('、') + ' 连接异常', 'err');
+};
+
+$('#btnDel').onclick = async () => {
+  if (!selId) return;
+  const ok = await confirmBox('删除 provider「' + selId + '」？', '配置会从 data/config.json 中移除，无法撤销。若它是当前 provider，会自动切到第一个。', '删除');
+  if (!ok) return;
+  try {
+    await api('/api/providers/' + encodeURIComponent(selId), { method: 'DELETE' });
+    selId = null;
+    setDirty(false);
+    await load();
+    toast('已删除', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
+
+$('#btnLogs').onclick = loadLogs;
+$('#logFilter').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-f]');
+  if (!b) return;
+  logFilter = b.dataset.f;
+  $$('#logFilter button').forEach((x) => x.classList.toggle('on', x === b));
+  renderLogs();
+});
+$('#autoRefresh').addEventListener('change', (e) => {
+  localStorage.setItem(LS_AUTO, e.target.checked ? '1' : '0');
+  startAuto(e.target.checked);
+});
+function startAuto(on) {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  if (on) autoTimer = setInterval(() => { if (!document.hidden) loadLogs(); }, 4000);
+}
+
+$('#tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('.tab');
+  if (!b) return;
+  snipKey = b.dataset.k;
+  $$('#tabs .tab').forEach((x) => x.classList.toggle('on', x === b));
+  updateSnippets();
+});
+$('#btnCopySnip').onclick = () => copyText($('#snip').textContent);
+$('#endpoint').onclick = () => copyText($('#endpoint').textContent);
+
+$('#btnTheme').onclick = () => {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem(LS_THEME, next);
+};
+
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    save();
+  }
+});
+
+window.addEventListener('beforeunload', (e) => {
+  if (dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ------------------------------------------------------------------ */
+/* 启动                                                               */
+/* ------------------------------------------------------------------ */
+(function init() {
+  const qTheme = new URLSearchParams(location.search).get('theme');
+  const t = qTheme || localStorage.getItem(LS_THEME);
+  if (t) document.documentElement.dataset.theme = t;
+  const auto = localStorage.getItem(LS_AUTO) !== '0';
+  $('#autoRefresh').checked = auto;
+
+  load().catch(() => {
+    $('#dot').className = 'dot off';
+    $('#statusText').textContent = '网关未连接';
+    $('#list').innerHTML = '<li class="empty">连接不到网关<br />确认服务已启动（node server.js）</li>';
+    toast('无法连接网关，请检查服务是否运行', 'err');
+  });
+  loadLogs();
+  startAuto(auto);
+  setInterval(() => { if (!document.hidden) load().catch(() => {}); }, 30000);
+})();
 </script>
 </body>
 </html>
