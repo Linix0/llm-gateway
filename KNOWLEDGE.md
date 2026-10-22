@@ -5,7 +5,7 @@
 >
 > **维护纪律**：任何改动都必须同步更新本文件的「变更历史」与相关章节，并提交 git。
 
-- 当前版本：**v1.9.0**（见 `package.json`）
+- 当前版本：**v1.10.0**（见 `package.json`）
 - 仓库：https://github.com/Linix0/llm-gateway （Public / main / MIT）
 - 运行时：Node >= 18，**零第三方依赖**（只 `require` 内置模块）
 - 本机路径：`C:\Users\Administrator\WorkBuddy\2026-10-22-14-09-51\llm-gateway`
@@ -40,22 +40,27 @@ graph TB
     C3 -->|"8787/v1/messages"| S
 
     subgraph gw["llm-gateway :8787"]
-        S["server.js<br/>HTTP 入口"]
-        R["resolveTarget()<br/>模型级路由"]
+        S["server.js<br/>HTTP 入口（仅组装 + 主流程）"]
+        R["lib/routing.js<br/>别名 / 降级链 / 模型级路由"]
+        Q["lib/queue.js<br/>串行车道 + 熔断"]
         AD["lib/responses-adapter.js<br/>Responses ⇄ Chat"]
-        PX["proxyRequest()<br/>透传 + SSE 直通"]
-        CFG["data/config.json"]
-        LOG["data/requests.log<br/>轮转"]
-        UI["public/index.html<br/>管理界面"]
-        API["handleAdmin()<br/>/api/*"]
+        PX["lib/proxy.js<br/>透传 + SSE 直通"]
+        CFG["lib/config.js<br/>data/config.json"]
+        LOG["lib/logger.js<br/>data/requests.log 轮转"]
+        USG["lib/usage.js<br/>用量 + 每日预算"]
+        UI["public/index.html<br/>+ styles.css + app.js"]
+        API["lib/admin-api.js<br/>/api/*"]
     end
 
     S --> R
+    S --> Q
     R -->|"需要翻译"| AD --> PX
     R -->|"直接透传"| PX
+    Q --> PX
     S --> API
     API --- CFG
     S -.记录.-> LOG
+    PX -.用量.-> USG
     PX -->|"注入 key"| UP1["上游 A (openai)"]
     PX -->|"注入 key"| UP2["上游 B (anthropic)"]
     UI -.读写.-> API
@@ -68,32 +73,63 @@ graph TB
 
 ## 3. 文件地图
 
+> **v1.10.0 起已模块化**：原先 1589 行的 `server.js` 拆成 `lib/` 九个模块，
+> 单文件 1900 行的 `public/index.html` 拆成三个文件。下面两张表是现在的真实结构。
+
+### 后端
+
 | 文件 | 行数级 | 职责 | 改这里要注意 |
 |---|---|---|---|
-| `server.js` | ~1140 | 全部服务端逻辑：配置、路由、代理、适配调度、管理 API、日志 | 已偏大，新增模块优先放 `lib/` |
-| `lib/responses-adapter.js` | ~490 | Responses ⇄ chat/completions 双向翻译；导出 `toChatRequest` / `chatToResponses` / `streamChatToResponses` | 改流式事件序列时，务必用真实 `codex exec` 验证 |
-| `public/index.html` | ~1900 | 单文件管理界面（HTML+CSS+JS 全内联，无构建）。**侧边导航布局**：左栏 `.sidebar`（品牌/导航/状态/模型胶囊），右栏 `.main` 内四个分页 `.page#page-{overview,providers,snippets,logs}`，由 `showPage(id)` 切换（localStorage + URL hash 记忆）。帮助释意 = 标题旁 `.help-btn`（data-help）→ `HELP` 映射 → 全局浮层 `.help-pop` | 主题用 CSS 变量；新增卡片要带 `data-cid` 以接入折叠体系；新增分页要同时加导航项和 `.page` 段 |
-| `data/config.json` | — | 运行配置（**gitignore，含明文 key**） | 只能由 `saveCfg()` 写，勿手改（会被原子写覆盖） |
-| `data/config.example.json` | — | 脱敏样例，入库 | 新增配置字段时**必须同步** |
-| `data/requests.log[.N]` | — | JSONL 请求日志，按大小轮转 | gitignore |
-| `autostart.ps1` | — | 注册/启停 Windows 计划任务 `LlmGateway` | 沙箱里 `schtasks.exe` 被禁，用 `Start-ScheduledTask` cmdlet |
-| `start-hidden.vbs` | — | 由计划任务调用，无窗口启动 node | gitignore（含本机绝对路径） |
+| `server.js` | ~220 | **只做三件事**：`require` 组装模块、HTTP 主流程（路由/静态/降级循环）、优雅退出 | 不要往里塞业务函数；新逻辑一律放 `lib/` |
+| `lib/config.js` | ~265 | `DEFAULT_CFG`、归一化（`normalizeAliases/Fallback/Budget/Circuit`）、**`cfg` 单例**、`loadCfg`/`reloadCfg`/`saveCfg`、`resolveKey`/`maskKey` | `reloadCfg()` 是**原地覆盖字段**（`Object.assign(cfg, …)`）而非重新赋值，否则其他模块持有的引用全部失效 |
+| `lib/util.js` | ~100 | 无状态工具：`statusKind()`、`localIso()`、`readBody()`、`sendJson()`、`forwardHeaders()`、`MIME`、`serveStatic()` | 这里不能 `require` 配置单例，保持纯函数 |
+| `lib/logger.js` | ~70 | `recent` 内存环形数组、JSONL 落盘、`rotateLogs()`、`logRequest()`、`logFiles()` | 字节计数用 `logBytes` getter + `resetLogBytes()` 暴露（`/api/logs/clear` 依赖） |
+| `lib/usage.js` | ~150 | **`usage` 单例**、`recordUsage()`、`extractUsage()`、`budgetDayKey/rollToday/budgetState` | `usage` 是共享单例，`/api/usage/clear` **原地清空**（遍历 delete）而不是 `usage = {}` |
+| `lib/queue.js` | ~150 | 每 provider 串行车道（`withLane`）、`circuits` 熔断状态、`circuitOpen()`、`noteUpstreamResult()` | `withLane()` **必须 `return await fn()`**，否则调用方拿到 `undefined` 会把成功误判为失败（v1.9.0 真 bug） |
+| `lib/routing.js` | ~175 | `isAnthropicPath`/`isModelPath`、`applyAlias`、`resolveFallbackModel`、`buildCandidates`、`pickProvider`、`mapModel`、`resolveTarget`、`listModels` | 别名优先于 `modelPolicy=fixed`（靠第三参 `aliased` 跳过 fixed 分支） |
+| `lib/proxy.js` | ~430 | `proxyRequest()`（透传 + SSE）、`handleResponsesProxy()`（Responses 翻译代理）、`sseWrite()` | 两函数所有结束分支都要 `done()`；`opts.softFail` 时不写客户端，只返回 `{ok,status,kind,message}` |
+| `lib/tester.js` | ~205 | `testProvider`/`testModel`、**`modelStatusStore` 单例**、`runAutoTest`/`scheduleAutoTest` | 测活结果持久化到 `data/model-status.json`；定时巡检只在上游车道空闲时跑 |
+| `lib/admin-api.js` | ~345 | `handleAdmin()`，所有 `/api/*` 端点（大 `if` 链） | 加端点要同步本文件 §6 与 README 的 API 表 |
+| `lib/responses-adapter.js` | ~490 | Responses ⇄ chat/completions 双向翻译，导出 `toChatRequest` / `chatToResponses` / `streamChatToResponses` | 改流式事件序列务必用真实 `codex exec` 验证 |
 
-### server.js 内部索引（行号会漂移，按函数名定位）
+### 前端
 
-| 区块 | 关键函数 | 说明 |
+| 文件 | 行数级 | 职责 |
 |---|---|---|
-| 配置 | `loadCfg()` / `saveCfg()` / `resolveKey()` / `maskKey()` | `saveCfg` 是**原子写**（tmp → .bak → rename） |
-| 日志 | `localIso()` / `rotateLogs()` / `logRequest()` / `logFiles()` | 时间存本地时区 + 毫秒 `at`；超 `maxSizeKB` 轮转 |
-| 用量 | `loadUsage()` / `recordUsage()` / `extractUsage()` / `usageToTokens()` | 从响应尾部 8KB 抠 usage（OpenAI/Anthropic 字段名都兼容）；5s 合并落盘 `data/usage.json` |
-| 并发 | `laneOf()` / `acquireLane()` / `releaseLane()` / `withLane()` | 每 provider 一条串行车道；排队可取消；详见 §7 决策表 |
-| 路由 | `pickProvider()` / `mapModel()` / `resolveTarget()` / `reconcileActiveModel()` | `providerId/modelId` 显式路由优先级最高 |
-| 代理 | `proxyRequest()` / `forwardHeaders()` / `readBody()` | SSE 边收边转；请求体上限 64MB |
-| 适配 | `handleResponsesProxy()` / `sseWrite()` | 调用 `lib/responses-adapter.js` |
-| 管理 | `handleAdmin()` | 所有 `/api/*` 端点都在这里，是一个大 `if` 链 |
-| 测活 | `testProvider()` / `testModel()` | 后者发真实请求（`max_tokens=1`） |
-| 测活持久化 | `recordModelStatus()` / `saveModelStatus()` / `runAutoTest()` / `scheduleAutoTest()` | 结果落盘 `data/model-status.json`（3s 合并原子写）；定时测活只在对应上游空闲时跑 |
-| 生命周期 | `trackRequest()` / `shutdown()` | 优雅退出：停收新请求 → 等在途 → 退出 |
+| `public/index.html` | ~510 | 页面结构：左栏 `.sidebar`（品牌/导航/状态/模型胶囊），右栏 `.main` 五个分页 `.page#page-{overview,providers,policy,snippets,logs}`；`<link rel="stylesheet" href="/styles.css">` + `<script src="/app.js">` |
+| `public/styles.css` | ~570 | 全部样式：`:root` / `[data-theme=light]` 双主题变量、侧边导航、卡片折叠、策略页（`.arow`/`.fb-chip`/`.bud-bar`/`.circ-*`）、≤920px 响应式 |
+| `public/app.js` | ~1490 | 全部交互：`showPage()`（localStorage + URL hash）、自动刷新、`HELP` 释意映射、`/api/*` 调用与渲染 |
+
+改界面时注意：三个文件由 `serveStatic` 按 MIME 直出，无构建、无缓存头协商；改完硬刷新即可。
+新增分页要**同时**加导航项（`data-page`）与 `.page` 段；新增卡片要带 `data-cid` 才接入折叠体系。
+
+### 数据与运维
+
+| 文件 | 职责 |
+|---|---|
+| `data/config.json` | 运行配置（**gitignore，含明文 key**）。只能由 `saveCfg()` 写，勿手改（会被原子写覆盖） |
+| `data/config.example.json` | 脱敏样例，入库。新增配置字段时**必须同步** |
+| `data/requests.log[.N]` | JSONL 请求日志，按大小轮转（gitignore） |
+| `data/usage.json` / `data/model-status.json` | 用量与测活结果持久化（gitignore） |
+| `autostart.ps1` | 注册/启停 Windows 计划任务 `LlmGateway` |
+| `start-hidden.vbs` | 由计划任务调用，无窗口启动 node（gitignore，含本机绝对路径） |
+
+### 模块依赖方向（**不要成环**）
+
+```
+server.js ──► config / util / logger / usage / queue / routing / proxy / tester / admin-api
+config    ──► util                    (纯叶子)
+logger    ──► config                  (读 logs 配置)
+usage     ──► config + util           (读 budget 配置)
+queue     ──► config + util
+routing   ──► config + queue          (buildCandidates 要读熔断状态)
+proxy     ──► config + util + logger + usage + responses-adapter
+tester    ──► config + util + queue + proxy
+admin-api ──► config + util + logger + usage + queue + routing + tester
+```
+
+`config.js` 是最底层：它只依赖 `util`，**不接受反向依赖**。所有模块拿到的都是同一个 `cfg` 对象引用，
+所以任何"重新加载/清空"操作都必须**原地修改**，不能重新赋值变量。
 
 ---
 
@@ -103,14 +139,20 @@ graph TB
 2. `/healthz` → 直接返回；`/api/*` → `handleAdmin()`；`GET /v1/models` → `listModels()`（本地声明）
 3. `GET` 且非模型路径 → 静态文件（`serveStatic`）
 4. 非模型路径 → 404（**不要**把页面请求转发到上游）
-5. `resolveTarget(clientModel, anthropic)` 选出 `{provider, model}`：
-   - 显式 `providerId/modelId` → 精确命中
-   - `modelPolicy='fixed'` → 一律用 `cfg.activeModel`
+5. `applyAlias()`：客户端模型名命中 `aliases` 则替换（别名优先于后面的 fixed 策略）
+6. `resolveTarget(clientModel, anthropic, aliased)` 选出 `{provider, model}`：
+   - 显式 `providerId/modelId` → 精确命中（`aliased` 为 true 时同）
+   - `modelPolicy='fixed'` 且未被别名命中 → 一律用 `cfg.activeModel`
    - `modelPolicy='auto'` → 按客户端模型名找唯一声明者，找不到回落当前
-6. `mapModel()` 应用 `models[].upstream` 重映射，并写回请求体
-7. `/v1/responses` 且 provider 未声明 `upstreamResponses:true` → `handleResponsesProxy()` 走翻译
-8. 否则 `proxyRequest()`：注入 `authorization` / `x-api-key`，转发，SSE 直通
-9. 结束 → `logRequest()` 写 JSONL（路径/模型/状态/耗时，**不记 prompt 与 key**）
+7. `mapModel()` 应用 `models[].upstream` 重映射，并写回请求体
+8. **预算检查**：`budgetState()` 超限且 `action='reject'` → 429 `gateway_budget_exceeded`
+9. **降级循环**：`buildCandidates()` 按 `fallback.order` 构造候选（跳过熔断中的 provider），
+   逐个 `withLane()` 发起；前一跳用 `softFail` 让可降级错误不写客户端，`isDegradable()` 为真才继续下一跳；
+   只有最后一跳的错误才真正写给客户端
+10. 每跳结束后 `noteUpstreamResult()` 更新熔断计数；成功则记录 `used.hop` 并跳出
+11. `/v1/responses` 且 provider 未声明 `upstreamResponses:true` → `handleResponsesProxy()` 走翻译
+12. 否则 `proxyRequest()`：注入 `authorization` / `x-api-key`，转发，SSE 直通
+13. 结束 → `logRequest()` 写 JSONL（路径/模型/状态/耗时，**不记 prompt 与 key**）→ `recordUsage()` 累计用量
 
 ---
 
@@ -131,6 +173,30 @@ graph TB
       "enabled": false, "maxAttempts": 2, "backoffMs": 800
     }
   },
+  "aliases": {                  // 客户端短名 → 真实目标（优先于 modelPolicy=fixed）
+    "fast": "nextapi/deepseek-v4.1-flash",   // 值可写 providerId/modelId（精确）或纯模型名
+    "smart": "claude-sonnet-4-5"
+  },
+  "fallback": {                 // 失败降级链
+    "enabled": true,
+    "order": ["nextapi", "openrouter"],      // 备用 provider id，按序尝试（不含主）
+    "maxHops": 1,                            // 单请求最多降级几次（1–5）
+    "onKinds": ["rate", "upstream", "net"],  // 哪些错误类型才降级
+    "modelMap": { "openrouter": "openrouter/free" }  // 指定某 provider 降级时用的模型
+  },
+  "budget": {                   // 每日预算（本地时区每天 resetHour 点开新一天）
+    "enabled": false,
+    "dailyRequests": 0,         // 0 = 不限制
+    "dailyPromptTokens": 0,
+    "dailyCompletionTokens": 0,
+    "action": "warn",           // warn=只告警 | reject=超限返回 429 gateway_budget_exceeded
+    "resetHour": 4
+  },
+  "circuit": {                  // 熔断（默认开）；状态只在内存，重启清零
+    "enabled": true,
+    "threshold": 5,             // 连续失败次数
+    "cooldownMs": 60000         // 熔断持续时间
+  },
   "providers": [{
     "id": "nextapi",
     "name": "NextApi",
@@ -143,7 +209,10 @@ graph TB
 }
 ```
 
-边界（由 `clampNum` 强制）：`maxSizeKB` 64–524288；`keep` 1–20。
+边界（由 `clampNum` 强制）：`maxSizeKB` 64–524288；`keep` 1–20；
+`fallback.maxHops` 1–5（`order` 最多 20 项）；`budget.resetHour` 0–23、`dailyRequests` 0–1e8、
+token 两项 0–1e12；`circuit.threshold` 2–100、`cooldownMs` 5000–3600000。
+`onKinds` 只接受 `ALL_DEGRADE_KINDS` 内的值，非法项被丢弃（空则回落到默认三项）。
 `env:VAR` 从 `process.env` 取，取不到视为空（不会报错，请求会以无 key 发出）。
 
 ---
@@ -169,9 +238,13 @@ graph TB
 | POST | `/api/logs/config` | 改轮转策略 |
 | POST | `/api/logs/clear` | `{"archives":true}` 连归档删 |
 | GET | `/api/logs/download?name=` | 下载（只匹配 `requests.log[.N]`） |
-| GET | `/api/usage` | 用量：总额 + 按 provider/model 明细（请求数/失败/token/均耗时） |
-| POST | `/api/usage/clear` | 用量清零 |
-| POST | `/api/reload` | 重读 config.json |
+| GET | `/api/usage` | 用量：总额 + 按 provider/model 明细（请求数/失败/token/均耗时）。**含今日预算进度的不是这里**，是 `GET /api/state` 的 `budgetState` 字段 |
+| POST | `/api/usage/clear` | 用量清零（**原地清空 `usage` 单例**） |
+| POST | `/api/reload` | 重读 config.json（**原地覆盖 `cfg` 字段**） |
+| GET/POST | `/api/aliases` | 读取/保存模型别名：`{"aliases":{"fast":"nextapi/deepseek-v4.1-flash"}}` |
+| GET/POST | `/api/fallback` | 读取/配置降级链（body 见 §5 `fallback`） |
+| GET/POST | `/api/budget` | 读取/配置每日预算；`{"resetToday":true}` 清零今日计数 |
+| GET/POST | `/api/circuit` | 读取熔断状态/配置；`{"reset":"all"\|providerId}` 手动复位 |
 
 测活 `kind`：`ok` / `rate`(429) / `auth`(401-403) / `missing`(404) / `reject`(400) / `upstream`(5xx) / `net`。
 
@@ -182,7 +255,8 @@ graph TB
 | 决策 | 原因 | 反直觉的地方 |
 |---|---|---|
 | 零依赖 | 免 `npm install`，拷走即用 | 不要为此引第三方包；要工具函数自己写 |
-| 管理界面单文件内联 | 无构建、无静态资源目录依赖 | CSS 变量定义在 `:root` 与 `[data-theme=light]`，新增颜色必须用变量 |
+| 配置/用量/测活是**共享单例** | 各模块 `require` 时拿到的是同一份对象引用 | 因此"重新加载""清零"都必须**原地修改**：`reloadCfg()` 用 `Object.assign(cfg, …)`、`/api/usage/clear` 遍历 `delete`。**一旦改成 `cfg = x` / `usage = {}`，其余模块仍持有旧对象，改动静默失效**（v1.10.0 拆分时踩过） |
+| `withLane()` 必须 `return await fn()` | 调用方靠返回值判定成功/失败并喂给熔断 | 漏了 return → 所有请求被记成失败 → 熔断只涨不清 |
 | 不做自动重试 | 避免重复计费 | v1.6.0 起改为**默认关、可选开**：只在 429/5xx/网络错误且**尚未给客户端写过任何字节**时整请求重放，一旦开始流式输出绝不重试 |
 | 每 provider 串行车道 | 上游普遍"并发=1"，透传会互撞 429 | 车道按 provider 隔离（一个上游卡死不影响别的）；排队中的请求客户端断开会立即取消，不会泄漏车位 |
 | `proxyRequest`/`handleResponsesProxy` 返回 Promise | 供 `withLane` 排队与优雅退出感知完成 | **改这两个函数时必须保证所有分支（end/error/close/重试耗尽）都调用 `done()`**，否则车道永久泄漏——v1.6.0 开发中就因往已销毁的 res 写响应抛异常导致 done 不执行，已用 try/finally + `sendJson` 防御修复 |
@@ -209,21 +283,27 @@ graph TB
 | 任务 | 做法 |
 |---|---|
 | 加一个新 provider | 界面「新增」即可；或改 `config.json` 后 `POST /api/reload`。改端口需重启 |
-| 加一个管理 API | 在 `handleAdmin()` 的 `if` 链里加一段，返回用 `sendJson()`；同步本文件 §6 与 README |
-| 加一个界面分区 | 复制 `.card` 结构并带 `data-cid`，即自动接入折叠/持久化；主题色用变量；如需独立成页，在 `#nav` 加 `data-page` 项并放 `.page` 段 |
-| 新增加密/鉴权 | 在 `createServer` 入口做，注意别拦 `/healthz` |
-| 拆 `server.js` | 按 §3 区块拆到 `lib/`，`require` 进来；保持零依赖 |
+| 加一个管理 API | 在 `lib/admin-api.js` 的 `handleAdmin()` `if` 链里加一段，返回用 `sendJson()`；同步本文件 §6 与 README |
+| 加一个界面分区 | 在 `public/index.html` 复制 `.card` 结构并带 `data-cid`（自动接入折叠/持久化）；样式写在 `styles.css` 且用变量；逻辑写在 `app.js`。如需独立成页，在 `#nav` 加 `data-page` 项并放 `.page` 段 |
+| 新增加密/鉴权 | 在 `server.js` 的 `createServer` 入口做，注意别拦 `/healthz` |
+| 新增后端模块 | 放 `lib/`，只依赖下层模块（见 §3 依赖方向，不要成环）；需要配置就 `require('./config')` 拿 `cfg`，**不要自己再读一次文件** |
 | 改 Responses 适配 | 改 `lib/responses-adapter.js`，用真实 `codex exec` 验证（纯对话 + apply_patch 工具调用两条路径） |
 
 ### 验证清单（改完必跑）
 
 ```bash
-node --check server.js                     # 语法
+node --check server.js && for f in lib/*.js public/app.js; do node --check "$f"; done   # 语法（拆模块后必跑）
 curl --noproxy '*' http://127.0.0.1:8787/healthz
+curl --noproxy '*' http://127.0.0.1:8787/ -o /dev/null -w '%{http_code}\n'   # 静态首页
+curl --noproxy '*' http://127.0.0.1:8787/app.js -o /dev/null -w '%{http_code}\n'
+curl --noproxy '*' http://127.0.0.1:8787/styles.css -o /dev/null -w '%{http_code}\n'
 curl --noproxy '*' -X POST http://127.0.0.1:8787/v1/chat/completions \
   -H 'content-type: application/json' -H 'authorization: Bearer local' \
   --data-binary @/tmp/req.json             # {"model":"…","messages":[{"role":"user","content":"ping"}],"max_tokens":16}
 ```
+
+拆分后尤其要验证的：`/api/state` 能返回、`/api/reload` 后界面数据仍更新（证明原地覆盖生效）、
+`/api/usage/clear` 后再查 `/api/usage` 确实为 0（证明原地清空生效）。
 
 界面用 headless Chrome 截图核对（暗/亮/窄屏三态）：
 
@@ -237,6 +317,26 @@ curl --noproxy '*' -X POST http://127.0.0.1:8787/v1/chat/completions \
 ---
 
 ## 9. 变更历史
+
+### v1.10.0 · 模块化拆分（1589 行单文件 → `lib/` 九模块 + `public/` 三文件）
+
+纯结构性重构，**行为不变**（配置格式、API 契约、界面功能全部兼容）。
+
+- **后端**：`server.js` 从 1589 行降到 ~220 行，只保留「组装模块 + HTTP 主流程 + 优雅退出」。
+  拆出 `lib/config.js`（配置单例与归一化）、`lib/util.js`（无状态工具）、`lib/logger.js`、
+  `lib/usage.js`、`lib/queue.js`（车道+熔断）、`lib/routing.js`（别名/降级/解析）、
+  `lib/proxy.js`、`lib/tester.js`、`lib/admin-api.js`；`lib/responses-adapter.js` 原地不动。
+  依赖方向严格单向（见 §3）：`config` 是叶子之上第一层，任何模块都不反向依赖入口。
+- **前端**：`public/index.html` 从 ~1900 行降到 ~510 行，`<style>` → `styles.css`（~570 行），
+  `<script>` → `app.js`（~1490 行）机械抽出，无构建、无打包。
+- **拆分引入的两个陷阱（已修，改代码务必遵守）**：
+  1. `cfg` / `usage` / `modelStatusStore` 都是**跨模块共享单例**，`require` 拿到的是引用。
+     所以 `reloadCfg()` 改为 `Object.assign(cfg, …)` 原地覆盖，`/api/usage/clear` 改为
+     遍历 `delete` 原地清空——写成重新赋值会让其他模块继续持有旧对象，改了不生效。
+  2. `logBytes` 是模块内私有的，跨模块重置需要显式 `resetLogBytes()`，`/api/logs/clear` 已改为调它。
+- **验证**：全部 `node --check` 通过；重启后 v1.9.0 功能照常——别名 `fast` → nextapi 200/1.8s、
+  `/v1/models` 8 个模型、`/api/usage` 50 次记录、nextapi 测活 ok 1552ms、
+  `/`、`/app.js`、`/styles.css` 均 200。
 
 ### v1.9.0 · 模型别名、失败降级、每日预算与熔断
 

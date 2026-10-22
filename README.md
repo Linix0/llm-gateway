@@ -41,7 +41,7 @@ Codex / Cursor / Claude Code / SDK
   上游限速，429 单独标记为「限流·未验证」；结果落盘持久化，支持定时自动巡检
 - **用量统计**：按 provider/model 累计请求数、失败数、输入/输出 token 与耗时
 - **请求日志**：本机时区时间戳、按大小自动轮转，磁盘占用有上限
-- **管理界面**：侧边导航（总览 / 供应商 / 客户端接入 / 请求日志）、亮暗双主题、
+- **管理界面**：侧边导航（总览 / 供应商 / 策略 / 客户端接入 / 请求日志）、亮暗双主题、
   每个功能区带「?」帮助释意、响应式适配窄屏
 - **后台常驻**：Windows 计划任务开机自启、无窗口运行（macOS/Linux 可用 systemd/launchd 自行托管）
 
@@ -238,9 +238,22 @@ powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action uninstall # 卸�
 
 ```
 llm-gateway/
-├── server.js                 服务主体（零依赖）
-├── lib/responses-adapter.js  Responses ⇄ chat/completions 协议翻译
-├── public/index.html         管理界面（单文件，无构建）
+├── server.js                 主入口：组装模块、HTTP 主流程、优雅退出（零依赖）
+├── lib/
+│   ├── config.js             配置单例、归一化、原子写、密钥解析
+│   ├── util.js               HTTP 工具（readBody/sendJson/头转发/静态资源）
+│   ├── logger.js             请求日志：内存记录 + JSONL 落盘 + 按大小轮转
+│   ├── usage.js              用量统计 + 每日预算
+│   ├── queue.js              每 provider 串行车道 + 熔断
+│   ├── routing.js            协议判断、别名、降级链、provider/模型解析
+│   ├── proxy.js              代理核心：透传 + Responses 协议翻译代理
+│   ├── tester.js             连通性/模型级测活、结果持久化、定时巡检
+│   ├── admin-api.js          管理 API（/api/*）
+│   └── responses-adapter.js  Codex Responses ⇄ chat/completions 协议翻译
+├── public/
+│   ├── index.html            管理界面结构（侧边导航，无构建）
+│   ├── styles.css            样式（双主题、响应式）
+│   └── app.js                界面交互
 ├── KNOWLEDGE.md              知识图谱 / 维护手册
 ├── autostart.ps1             Windows 开机自启管理
 ├── data/config.example.json  配置样例（脱敏）
