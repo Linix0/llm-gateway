@@ -239,9 +239,8 @@ const HELP = {
   alias: {
     t: '模型别名',
     b: '<p>给模型起一个固定的短名字，客户端只写别名，真实模型在网关上随时换。</p>' +
-       '<p>例如 <span class="mono">fast</span> → <span class="mono">nextapi/deepseek-v4.1-flash</span>、<span class="mono">smart</span> → <span class="mono">openrouter/anthropic/claude-sonnet-4.5</span>；' +
-       '以后想换模型只改别名指向，客户端配置一行都不用动。</p>' +
-       '<p>目标写 <span class="mono">供应商ID/模型ID</span> 可精确指定上游，只写模型名则按正常规则匹配。</p>'
+       '<p>例如 <span class="mono">fast</span> → <span class="mono">nextapi/deepseek-v4.1-flash</span>：以后想换模型只改别名指向，客户端配置一行都不用动。</p>' +
+       '<p>每一行选一个「供应商 + 模型」；供应商留「按模型名自动匹配」时只记录模型名，按正常路由规则匹配。别名优先于「网关固定」策略。</p>'
   },
   fallback: {
     t: '失败降级',
@@ -485,20 +484,72 @@ let policyReady = false;
 
 /* ---- 别名 ---- */
 
+/** 某供应商的模型 id 列表；pid 为空时返回全库去重 */
+function modelIdsOf(pid) {
+  const out = [];
+  const push = (id) => { if (id && out.indexOf(id) < 0) out.push(id); };
+  (state.providers || []).forEach((p) => {
+    if (!pid || p.id === pid) (p.models || []).forEach((m) => push(m.id));
+  });
+  return out;
+}
+
+function providerOptions(sel) {
+  return '<option value="">按模型名自动匹配</option>' +
+    (state.providers || []).map((p) => {
+      const label = p.name && p.name !== p.id ? `${p.id} · ${p.name}` : p.id;
+      return `<option value="${escapeHtml(p.id)}"${p.id === sel ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+    }).join('');
+}
+
+function modelOptions(pid, sel, emptyText) {
+  const ids = modelIdsOf(pid);
+  if (sel && ids.indexOf(sel) < 0) ids.unshift(sel);
+  return `<option value="">${escapeHtml(emptyText || '选择模型…')}</option>` +
+    ids.map((m) => `<option value="${escapeHtml(m)}"${m === sel ? ' selected' : ''}>${escapeHtml(m)}</option>`).join('');
+}
+
+/** "providerId/modelId" -> {pid, mid}；前半段不是已知供应商时视为纯模型名 */
+function splitTarget(t) {
+  const i = (t || '').indexOf('/');
+  if (i > 0) {
+    const head = t.slice(0, i);
+    if ((state.providers || []).some((p) => p.id === head)) return { pid: head, mid: t.slice(i + 1) };
+  }
+  return { pid: '', mid: t || '' };
+}
+
 function addAliasRow(name, target) {
+  const { pid, mid } = splitTarget(target);
   const row = document.createElement('div');
   row.className = 'arow';
   row.innerHTML = `
     <input class="aname mono" placeholder="别名，如 fast" value="${escapeHtml(name || '')}" autocomplete="off" spellcheck="false" />
-    <input class="atarget mono" placeholder="供应商ID/模型ID 或 模型名" value="${escapeHtml(target || '')}" autocomplete="off" spellcheck="false" />
+    <select class="aprov" title="目标供应商">${providerOptions(pid)}</select>
+    <select class="amodel" title="目标模型">${modelOptions(pid, mid, pid ? '该供应商第一个模型' : '选择模型…')}</select>
     <button class="icon-btn danger" title="删除这一行" aria-label="删除这一行" style="width:26px;height:26px;font-size:11px">✕</button>`;
   row.querySelector('.icon-btn.danger').onclick = () => {
     row.remove();
     if (!$$('#aliasRows .arow').length) addAliasRow();
     updateAliasCount();
+    markAliasDirty();
   };
+  const prov = row.querySelector('.aprov');
+  const msel = row.querySelector('.amodel');
+  row.querySelector('.aname').oninput = () => { updateAliasCount(); markAliasDirty(); };
+  prov.onchange = () => {
+    const ids = modelIdsOf(prov.value);
+    msel.innerHTML = modelOptions(prov.value, ids.length ? ids[0] : '', prov.value ? '该供应商第一个模型' : '选择模型…');
+    markAliasDirty();
+  };
+  msel.onchange = markAliasDirty;
   $('#aliasRows').appendChild(row);
   updateAliasCount();
+}
+
+function markAliasDirty() {
+  const el = $('#aliasResult');
+  if (el) el.textContent = '未保存';
 }
 
 function updateAliasCount() {
@@ -511,8 +562,9 @@ function aliasesFromRows() {
   const out = {};
   $$('#aliasRows .arow').forEach((r) => {
     const k = r.querySelector('.aname').value.trim();
-    const v = r.querySelector('.atarget').value.trim();
-    if (k && v) out[k] = v;
+    const pid = r.querySelector('.aprov').value.trim();
+    const mid = r.querySelector('.amodel').value.trim();
+    if (k && mid) out[k] = pid ? pid + '/' + mid : mid;
   });
   return out;
 }
@@ -562,7 +614,7 @@ function renderFbModelMap() {
   if (!fbOrder.length) return;
   const title = document.createElement('label');
   title.className = 'f';
-  title.innerHTML = '降级时使用的模型 <span class="opt">留空则自动选：同名模型 → 该供应商第一个模型</span>';
+  title.innerHTML = '降级到该供应商时使用的模型 <span class="opt">选「自动」则按：同名模型 → 该供应商第一个模型</span>';
   box.appendChild(title);
   fbOrder.forEach((pid) => {
     const p = (state.providers || []).find((x) => x.id === pid);
@@ -573,7 +625,8 @@ function renderFbModelMap() {
     const map = (state.fallback && state.fallback.modelMap) || {};
     wrap.innerHTML =
       `<input class="mono" value="${escapeHtml(pid)}" disabled />` +
-      `<input class="fbmap mono" data-pid="${escapeHtml(pid)}" placeholder="模型 ID（可选）" value="${escapeHtml(map[pid] || '')}" autocomplete="off" spellcheck="false" />`;
+      `<select class="fbmap" data-pid="${escapeHtml(pid)}" title="该供应商降级时使用的模型">` +
+      modelOptions(pid, map[pid] || '', '自动选择') + '</select>';
     box.appendChild(wrap);
   });
 }

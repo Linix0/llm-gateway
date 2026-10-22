@@ -5,7 +5,7 @@
 >
 > **维护纪律**：任何改动都必须同步更新本文件的「变更历史」与相关章节，并提交 git。
 
-- 当前版本：**v1.10.0**（见 `package.json`）
+- 当前版本：**v1.10.1**（见 `package.json`）
 - 仓库：https://github.com/Linix0/llm-gateway （Public / main / MIT）
 - 运行时：Node >= 18，**零第三方依赖**（只 `require` 内置模块）
 - 本机路径：`C:\Users\Administrator\WorkBuddy\2026-10-22-14-09-51\llm-gateway`
@@ -317,6 +317,28 @@ curl --noproxy '*' -X POST http://127.0.0.1:8787/v1/chat/completions \
 ---
 
 ## 9. 变更历史
+
+### v1.10.1 · 策略页下拉化与卡片密度治理（纯前端，无 API 变更）
+
+- **模型别名改下拉**：`addAliasRow()` 从「别名 + 手填目标」两列改为「别名输入 + 供应商下拉 +
+  模型下拉」三控件联动。新增 `modelIdsOf()` / `providerOptions()` / `modelOptions()` / `splitTarget()`
+  四个辅助函数；供应商选「按模型名自动匹配」时模型下拉列全库去重模型（存纯模型名），
+  选了供应商则列该供应商模型（存 `providerId/modelId`）。改任何行会置「未保存」提示（`markAliasDirty()`）。
+- **降级 modelMap 改下拉**：`renderFbModelMap()` 的模型输入框改为 `select`（空值="自动选择"），
+  保存逻辑 `#fbModelMap .fbmap` 不变（select.value 兼容）。
+- **卡片密度治理**（根因：策略页四张卡 `card-body` 无 padding，内容贴边）：
+  四卡 body 加 `pad` 类且 `.card-body.pad` 提到 `16px 18px`；新增 `.psec` 分块间距（18px）取代散落的
+  inline margin；`.row`/`.arow`/`label.f`/`.kinds`/`.fb-chip`/`.circ-*` 间距全部放宽；
+  `card-body.pad .actions` 通栏贴底（负 margin 抵消 padding）。
+- **select 自绘下拉箭头**：`appearance:none` 后 select 视觉上像输入框，用双 linear-gradient 画箭头
+  并 `padding-right:28px`，全局生效。
+- **窄屏防御**：`.arow` ≤700px 时别名/供应商各自独占一行；`.circ-item` 子项 `min-width:0` +
+  错误文案 ellipsis（"排队超时：…"这类长文案不再有撑破风险）。
+- **验证方法**：同源探针页（`public/_probe.html`，iframe 加载目标页后枚举 `getBoundingClientRect().right`
+  超出 `clientWidth` 的元素）定位横向溢出，验证后即删——430px 视口确认无页面级溢出，
+  只有顶部导航项在自身滚动容器内超出（预期）。
+- 策略页测试残留（aliases fast/smart、fallback、budget）已通过 `/api/*` 复位为默认；
+  熔断里 openrouter 的失败计数是正常业务流量（排队超时），非测试数据。
 
 ### v1.10.0 · 模块化拆分（1589 行单文件 → `lib/` 九模块 + `public/` 三文件）
 

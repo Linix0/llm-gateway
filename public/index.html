@@ -184,11 +184,12 @@
             <div class="grow"></div>
             <button class="btn subtle sm" id="btnAliasSave">保存</button>
           </div>
-          <div class="card-body">
+          <div class="card-body pad">
             <div id="aliasRows"></div>
             <button class="add-model" id="btnAliasAdd">+ 添加别名</button>
-            <div class="hint" style="margin-top:8px">
-              目标填 <span class="mono">供应商ID/模型ID</span> 可精确路由，或只填模型名按正常规则匹配。
+            <div class="hint psec">
+              左栏填短名，中间选供应商，右栏选该供应商的模型。供应商留「按模型名自动匹配」时，
+              网关只记录模型名、按正常路由规则匹配。<b>别名优先于「网关固定」策略</b>。
             </div>
             <div class="actions"><span class="result" id="aliasResult"></span></div>
           </div>
@@ -207,12 +208,12 @@
             </label>
             <button class="btn subtle sm" id="btnFbSave">保存</button>
           </div>
-          <div class="card-body">
+          <div class="card-body pad">
             <label class="f">备用供应商 <span class="opt">点击选择，数字为降级顺序</span></label>
             <div class="fb-pick" id="fbPick"></div>
-            <div class="hint" style="margin-top:6px">未列出的供应商即当前默认供应商（请求首先走它）。</div>
+            <div class="hint">未列出的供应商即当前默认供应商（请求首先走它）。</div>
 
-            <div class="row" style="margin-top:12px">
+            <div class="row psec">
               <div>
                 <label class="f" for="fbHops">单次请求最多降级次数</label>
                 <select id="fbHops">
@@ -233,7 +234,7 @@
               </div>
             </div>
 
-            <div id="fbModelMap" style="margin-top:12px"></div>
+            <div id="fbModelMap" class="psec"></div>
             <div class="actions">
               <button class="btn ghost sm" id="btnFbReset">复位熔断</button>
               <span class="result" id="fbResult"></span>
@@ -257,35 +258,35 @@
             </label>
             <button class="btn subtle sm" id="btnBudSave">保存</button>
           </div>
-          <div class="card-body">
+          <div class="card-body pad">
             <div class="row">
               <div>
                 <label class="f" for="budReq">每日请求数 <span class="opt">0 = 不限</span></label>
                 <input id="budReq" class="mono" inputmode="numeric" placeholder="0" />
               </div>
               <div>
-                <label class="f" for="budHour">每日重置时刻 <span class="opt">本地时区</span></label>
+                <label class="f" for="budHour">每日重置时刻 <span class="opt">0–23 点，本地时区</span></label>
                 <input id="budHour" class="mono" inputmode="numeric" placeholder="4" />
               </div>
             </div>
-            <div class="row" style="margin-top:10px">
+            <div class="row psec">
               <div>
-                <label class="f" for="budPrompt">输入 token 上限</label>
+                <label class="f" for="budPrompt">输入 token 上限 <span class="opt">0 = 不限</span></label>
                 <input id="budPrompt" class="mono" inputmode="numeric" placeholder="0" />
               </div>
               <div>
-                <label class="f" for="budComp">输出 token 上限</label>
+                <label class="f" for="budComp">输出 token 上限 <span class="opt">0 = 不限</span></label>
                 <input id="budComp" class="mono" inputmode="numeric" placeholder="0" />
               </div>
             </div>
-            <div style="margin-top:10px">
+            <div class="psec">
               <label class="f">超限时</label>
               <div class="seg" id="budAction">
                 <button data-a="warn">仅告警</button>
                 <button data-a="reject">拒绝请求</button>
               </div>
             </div>
-            <div id="budToday" style="margin-top:12px"></div>
+            <div id="budToday" class="psec"></div>
             <div class="actions">
               <button class="btn ghost sm" id="btnBudReset">今日清零</button>
               <span class="result" id="budResult"></span>
@@ -306,20 +307,22 @@
             </label>
             <button class="btn subtle sm" id="btnCirSave">保存</button>
           </div>
-          <div class="card-body">
+          <div class="card-body pad">
             <div class="row">
               <div>
-                <label class="f" for="cirThreshold">连续失败几次后熔断</label>
+                <label class="f" for="cirThreshold">连续失败几次后熔断 <span class="opt">2–100</span></label>
                 <input id="cirThreshold" class="mono" inputmode="numeric" placeholder="5" />
               </div>
               <div>
-                <label class="f" for="cirCooldown">冷却时长 <span class="opt">秒</span></label>
+                <label class="f" for="cirCooldown">冷却时长 <span class="opt">秒，5–3600</span></label>
                 <input id="cirCooldown" class="mono" inputmode="numeric" placeholder="60" />
               </div>
             </div>
-            <label class="f" style="margin-top:10px">当前状态</label>
-            <div class="circ-list" id="circuitList"></div>
-            <div class="hint" style="margin-top:8px">熔断中的供应商会被降级链跳过，冷却结束后自动恢复。</div>
+            <div class="psec">
+              <label class="f">当前状态</label>
+              <div class="circ-list" id="circuitList"></div>
+            </div>
+            <div class="hint psec">熔断中的供应商会被降级链跳过，冷却结束后自动恢复。熔断状态只在内存，重启清零。</div>
             <div class="actions"><span class="result" id="cirResult"></span></div>
           </div>
         </div>
