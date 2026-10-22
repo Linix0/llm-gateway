@@ -2,6 +2,9 @@
 data/config.json
 data/config.json.bak
 data/config.json.tmp
+data/usage.json
+data/usage.json.tmp
+data/model-status.json
 data/requests.log
 data/requests.log.*
 

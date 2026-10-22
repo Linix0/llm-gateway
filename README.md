@@ -17,6 +17,7 @@
 - 请求日志按大小自动轮转，不会无限增长
 - **模型级真实测活**：界面上对单个/全部模型发极小请求（`max_tokens=1`）验证真实可用性，
   串行节流避免触发上游限速，429 单独标记为「限流·未验证」而不是误报失败
+- **用量统计**：按 provider/model 累计请求数、失败率、token（输入/输出）与耗时，界面一目了然
 
 ```
 Codex / Cursor / SDK
@@ -225,6 +226,7 @@ llm-gateway/
   结果会同时着色左侧供应商列表里的模型 chip：绿=可用、黄=限流未验证、红=不可用（划线）。
 - **接入片段**：按 provider 直接给出 Codex / Cursor / Anthropic 的配置片段，一键复制。
 - **请求日志**：按状态筛选、耗时条形图、自动刷新（默认 4 秒，可在界面关掉），并带日志容量与轮转策略面板。
+- **用量统计**：总额格子（请求/失败/输入输出 token/均耗时）+ 按 provider 与模型的明细表，随自动刷新更新。
 - `Ctrl/Cmd + S` 保存；有未保存改动时离开页面会提醒。
 
 ## 管理 API
@@ -246,6 +248,8 @@ llm-gateway/
 | POST | `/api/logs/config` | 调整轮转策略，body `{"maxSizeKB":4096,"keep":5,"enabled":true}` |
 | POST | `/api/logs/clear` | 清空活动日志，body `{"archives":true}` 连归档一起删 |
 | GET | `/api/logs/download?name=requests.log` | 下载日志或归档文件 |
+| GET | `/api/usage` | 用量统计（总额 + 按 provider/model 明细） |
+| POST | `/api/usage/clear` | 用量清零 |
 | POST | `/api/reload` | 重新读取 config.json |
 
 **测活结果分类**（`/api/test/model` 与 `/api/test/models` 返回的 `kind` 字段）：

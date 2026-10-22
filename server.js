@@ -216,6 +216,99 @@ function logFiles() {
 }
 
 /* ------------------------------------------------------------------ */
+/* 用量统计（按 provider + model 累计请求数 / token / 耗时 / 失败率）     */
+/* ------------------------------------------------------------------ */
+
+const USAGE_PATH = path.join(DATA_DIR, 'usage.json');
+
+const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+
+function loadUsage() {
+  try {
+    const j = JSON.parse(fs.readFileSync(USAGE_PATH, 'utf8'));
+    return {
+      since: j.since || null,
+      requests: num(j.requests), errors: num(j.errors),
+      prompt: num(j.prompt), completion: num(j.completion), ms: num(j.ms),
+      items: j.items && typeof j.items === 'object' ? j.items : {}
+    };
+  } catch (_) {
+    return { since: localIso(new Date()), requests: 0, errors: 0, prompt: 0, completion: 0, ms: 0, items: {} };
+  }
+}
+
+let usage = loadUsage();
+let usageDirty = false;
+let usageTimer = null;
+
+function saveUsage() {
+  try {
+    const tmp = USAGE_PATH + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(usage), 'utf8');
+    fs.renameSync(tmp, USAGE_PATH);
+  } catch (_) { /* 统计失败不影响主流程 */ }
+  usageDirty = false;
+}
+
+/** 合并写盘：5 秒内多次请求只落一次 */
+function scheduleUsageSave() {
+  usageDirty = true;
+  if (usageTimer) return;
+  usageTimer = setTimeout(() => { usageTimer = null; if (usageDirty) saveUsage(); }, 5000);
+}
+
+function recordUsage(providerId, model, status, ms, u) {
+  const ok = status >= 200 && status < 300;
+  const p = num(u && u.prompt);
+  const c = num(u && u.completion);
+  usage.requests++;
+  usage.ms += num(ms);
+  if (!ok) usage.errors++;
+  usage.prompt += p;
+  usage.completion += c;
+  if (!usage.since) usage.since = localIso(new Date());
+
+  const key = `${providerId}||${model || '-'}`;
+  const it = usage.items[key] ||
+    (usage.items[key] = { provider: providerId, model: model || '-', requests: 0, errors: 0, prompt: 0, completion: 0, ms: 0, lastAt: 0 });
+  it.requests++;
+  it.ms += num(ms);
+  if (!ok) it.errors++;
+  it.prompt += p;
+  it.completion += c;
+  it.lastAt = Date.now();
+  scheduleUsageSave();
+}
+
+/** 从响应体里抠 usage：整段 JSON 直接取，SSE 取最后一个 usage 片段 */
+function extractUsage(text) {
+  if (!text) return null;
+  try {
+    const j = JSON.parse(text);
+    if (j && j.usage) return j.usage;
+  } catch (_) { /* 不是整段 JSON，按 SSE 处理 */ }
+  const re = /"usage"\s*:\s*\{[^}]*\}/g;
+  let m;
+  let last = null;
+  while ((m = re.exec(text))) last = m[0];
+  if (!last) return null;
+  try {
+    return JSON.parse('{' + last + '}').usage;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** 统一 OpenAI / Anthropic 的 token 字段名 */
+function usageToTokens(u) {
+  if (!u) return { prompt: 0, completion: 0 };
+  return {
+    prompt: num(u.prompt_tokens) || num(u.input_tokens),
+    completion: num(u.completion_tokens) || num(u.output_tokens)
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* 路由 & 工具                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -408,9 +501,19 @@ function proxyRequest(req, res, provider, bodyBuf, model) {
   const upReq = transport.request(opts, (upRes) => {
     const outHeaders = forwardHeaders(upRes.headers);
     res.writeHead(upRes.statusCode || 502, outHeaders);
-    upRes.pipe(res);
+
+    // 只留最后 8KB 用来抠 usage（usage 出现在响应末尾），不缓存完整响应
+    const ct = String(upRes.headers['content-type'] || '');
+    const collect = upRes.statusCode < 300 && (ct.includes('json') || ct.includes('event-stream'));
+    let tail = '';
+    upRes.on('data', (c) => {
+      if (collect) tail = (tail + c.toString('utf8')).slice(-8192);
+      res.write(c);
+    });
     upRes.on('end', () => {
+      res.end();
       const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
+      recordUsage(provider.id, model, upRes.statusCode, ms, usageToTokens(extractUsage(tail)));
       logRequest({
         path: req.url.split('?')[0],
         model: model || '-',
@@ -429,6 +532,7 @@ function proxyRequest(req, res, provider, bodyBuf, model) {
   });
   upReq.on('error', (err) => {
     const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
+    recordUsage(provider.id, model, 502, ms, null);
     logRequest({
       path: req.url.split('?')[0], model: model || '-', provider: provider.id,
       status: 502, ms, at: started, error: err.message
@@ -650,6 +754,30 @@ async function handleAdmin(req, res, pathname, query) {
   if (pathname === '/api/logs' && method === 'GET') {
     const limit = Math.min(Number(query.get('limit') || 50), MAX_RECENT);
     return sendJson(res, 200, { items: recent.slice(-limit).reverse() });
+  }
+
+  /** 用量统计：总额 + 按 provider/model 明细 */
+  if (pathname === '/api/usage' && method === 'GET') {
+    const items = Object.values(usage.items)
+      .map((it) => Object.assign({}, it, { avgMs: it.requests ? Math.round(it.ms / it.requests) : 0 }))
+      .sort((a, b) => b.requests - a.requests);
+    return sendJson(res, 200, {
+      since: usage.since,
+      requests: usage.requests,
+      errors: usage.errors,
+      prompt: usage.prompt,
+      completion: usage.completion,
+      total: usage.prompt + usage.completion,
+      avgMs: usage.requests ? Math.round(usage.ms / usage.requests) : 0,
+      items
+    });
+  }
+
+  /** 清空用量统计 */
+  if (pathname === '/api/usage/clear' && method === 'POST') {
+    usage = { since: localIso(new Date()), requests: 0, errors: 0, prompt: 0, completion: 0, ms: 0, items: {} };
+    saveUsage();
+    return sendJson(res, 200, { ok: true });
   }
 
   /** 日志文件与容量信息 */
@@ -904,6 +1032,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
       upRes.on('end', () => {
         const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
         logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status, ms, at: started, error: err.slice(0, 200) });
+        recordUsage(provider.id, model, status, ms, null);
         const msg = '上游 ' + status + ': ' + err.slice(0, 600);
         if (chat.stream) {
           res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive' });
@@ -933,6 +1062,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
           return;
         }
         logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 200, ms, at: started });
+        recordUsage(provider.id, model, 200, ms, usageToTokens(json && json.usage));
         sendJson(res, 200, RSP.chatToResponses(json, model, custom));
       });
       upRes.on('error', (e) => {
@@ -954,6 +1084,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
     tr.start();
 
     let buf = '';
+    let streamUsage = null;
     const handleLine = (line) => {
       if (!line || line.startsWith(':')) return;
       if (!line.startsWith('data:')) return;
@@ -963,6 +1094,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
       let obj;
       try { obj = JSON.parse(data); } catch (_) { return; }
       if (obj && obj.error) { tr.fail(obj.error.message || JSON.stringify(obj.error)); return; }
+      if (obj && obj.usage) streamUsage = obj.usage;   // 流式最后一个 chunk 才带 usage
       tr.push(obj);
     };
 
@@ -982,6 +1114,7 @@ function handleResponsesProxy(req, res, provider, body, model) {
       res.end();
       const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
       logRequest({ path: '/v1/responses', model: model || '-', provider: provider.id, status: 200, ms, at: started });
+      recordUsage(provider.id, model, 200, ms, usageToTokens(streamUsage));
     });
     upRes.on('error', (e) => {
       tr.fail('上游流中断: ' + e.message);

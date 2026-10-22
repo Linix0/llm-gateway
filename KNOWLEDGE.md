@@ -5,7 +5,7 @@
 >
 > **维护纪律**：任何改动都必须同步更新本文件的「变更历史」与相关章节，并提交 git。
 
-- 当前版本：**v1.4.1**（见 `package.json`）
+- 当前版本：**v1.5.0**（见 `package.json`）
 - 仓库：https://github.com/Linix0/llm-gateway （Public / main / MIT）
 - 运行时：Node >= 18，**零第三方依赖**（只 `require` 内置模块）
 - 本机路径：`C:\Users\Administrator\WorkBuddy\2026-10-22-14-09-51\llm-gateway`
@@ -85,6 +85,7 @@ graph TB
 |---|---|---|
 | 配置 | `loadCfg()` / `saveCfg()` / `resolveKey()` / `maskKey()` | `saveCfg` 是**原子写**（tmp → .bak → rename） |
 | 日志 | `localIso()` / `rotateLogs()` / `logRequest()` / `logFiles()` | 时间存本地时区 + 毫秒 `at`；超 `maxSizeKB` 轮转 |
+| 用量 | `loadUsage()` / `recordUsage()` / `extractUsage()` / `usageToTokens()` | 从响应尾部 8KB 抠 usage（OpenAI/Anthropic 字段名都兼容）；5s 合并落盘 `data/usage.json` |
 | 路由 | `pickProvider()` / `mapModel()` / `resolveTarget()` / `reconcileActiveModel()` | `providerId/modelId` 显式路由优先级最高 |
 | 代理 | `proxyRequest()` / `forwardHeaders()` / `readBody()` | SSE 边收边转；请求体上限 64MB |
 | 适配 | `handleResponsesProxy()` / `sseWrite()` | 调用 `lib/responses-adapter.js` |
@@ -156,6 +157,8 @@ graph TB
 | POST | `/api/logs/config` | 改轮转策略 |
 | POST | `/api/logs/clear` | `{"archives":true}` 连归档删 |
 | GET | `/api/logs/download?name=` | 下载（只匹配 `requests.log[.N]`） |
+| GET | `/api/usage` | 用量：总额 + 按 provider/model 明细（请求数/失败/token/均耗时） |
+| POST | `/api/usage/clear` | 用量清零 |
 | POST | `/api/reload` | 重读 config.json |
 
 测活 `kind`：`ok` / `rate`(429) / `auth`(401-403) / `missing`(404) / `reject`(400) / `upstream`(5xx) / `net`。
@@ -220,6 +223,18 @@ curl --noproxy '*' -X POST http://127.0.0.1:8787/v1/chat/completions \
 ---
 
 ## 9. 变更历史
+
+### v1.5.0 · 用量统计
+
+- `recordUsage()`：每个代理请求（成功/失败）按 `provider||model` 累计请求数、失败数、token、耗时。
+- `extractUsage()`：非流式取整个 JSON 的 `usage`；流式只保留响应**尾部 8KB** 用正则抠最后一个
+  `usage` 片段（usage 只出现在最后一个 chunk）。OpenAI（`prompt_tokens`）与
+  Anthropic（`input_tokens`）字段名都兼容。
+- 插桩点：`proxyRequest()`（通用透传）、`handleResponsesProxy()`（非流式 + 流式的最后 chunk）、
+  两处上游错误分支。`proxyRequest` 由 `pipe` 改为手动 `write/end` 以便采集，**注意**此后
+  每个响应都会经过这层，改 SSE 时要保留直通语义。
+- 持久化 `data/usage.json`（原子写，5s 合并）；`GET /api/usage`、`POST /api/usage/clear`。
+- 界面新增「用量统计」卡片（`data-cid="usage"`）：总额格子 + 明细表，随自动刷新更新。
 
 ### v1.4.1 · 配置原子写与优雅退出
 

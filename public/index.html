@@ -315,6 +315,19 @@
   .mstate.bad { color: var(--err); }
   .mstate.load { color: var(--muted); }
   .mrow.testing { opacity: .65; }
+
+  /* 用量统计卡片 */
+  .usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .usage-cell { background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 10px 12px; min-width: 0; }
+  .usage-cell .k { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .usage-cell .v { font-size: 18px; font-family: var(--mono); margin-top: 2px; white-space: nowrap; }
+  .utable-wrap { overflow-x: auto; }
+  .utable { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .utable th, .utable td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+  .utable th { color: var(--muted); font-weight: 500; font-size: 11px; }
+  .utable td.num, .utable th.num { text-align: right; font-family: var(--mono); }
+  .utable td.err { color: var(--err); }
+  .utable td.dim { color: var(--dim); }
   .add-model {
     margin-top: 7px; width: 100%; padding: 7px; border-radius: var(--r-xs);
     border: 1px dashed var(--line); background: transparent; color: var(--muted);
@@ -661,6 +674,24 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 用量统计 -->
+<div class="shell" style="padding-top:14px">
+  <div class="card" id="cardUsage" data-cid="usage">
+    <div class="card-head clickable" data-toggle="usage">
+      <span class="chev">▾</span>
+      <h2>用量统计</h2>
+      <div class="grow"></div>
+      <span class="hint" id="usageSummary">—</span>
+      <button class="btn subtle sm" id="btnUsageClear" title="只清统计，不影响日志与配置">清零</button>
+    </div>
+    <div class="card-body">
+      <div class="usage-grid" id="usageTotals"></div>
+      <div class="utable-wrap"><table class="utable" id="usageTable"></table></div>
+      <div class="hint" style="margin-top:8px">token 取自上游返回的 usage（流式为最后一个 chunk）；上游没给就只计请求数。</div>
     </div>
   </div>
 </div>
@@ -1337,6 +1368,63 @@ function renderLogs() {
   }).join('');
 }
 
+/* ------------------------------------------------------------------ */
+/* 用量统计                                                             */
+/* ------------------------------------------------------------------ */
+let usageData = null;
+
+function fmtNum(n) {
+  n = Number(n) || 0;
+  return n >= 100000 ? (n / 1000).toFixed(0) + 'k' : n >= 10000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+}
+
+async function loadUsage() {
+  try {
+    usageData = await api('/api/usage');
+    renderUsage();
+  } catch (_) { /* 静默，等下次刷新 */ }
+}
+
+function renderUsage() {
+  const d = usageData;
+  if (!d) return;
+  $('#usageSummary').textContent = `${fmtNum(d.requests)} 次请求 · 失败 ${fmtNum(d.errors)}`;
+  $('#usageTotals').innerHTML = [
+    ['请求', fmtNum(d.requests)],
+    ['失败', fmtNum(d.errors)],
+    ['输入 token', fmtNum(d.prompt)],
+    ['输出 token', fmtNum(d.completion)],
+    ['合计 token', fmtNum(d.total)],
+    ['平均耗时', (d.avgMs || 0) + 'ms']
+  ].map((x) => `<div class="usage-cell"><div class="k">${x[0]}</div><div class="v">${x[1]}</div></div>`).join('');
+
+  const rows = (d.items || []).map((it) => `<tr>
+      <td class="mono">${escapeHtml(it.provider)}</td>
+      <td class="mono">${escapeHtml(it.model)}</td>
+      <td class="num">${it.requests}</td>
+      <td class="num ${it.errors ? 'err' : ''}">${it.errors || 0}</td>
+      <td class="num">${fmtNum(it.prompt)}</td>
+      <td class="num">${fmtNum(it.completion)}</td>
+      <td class="num">${it.avgMs || 0}ms</td>
+      <td class="num dim">${it.lastAt ? new Date(it.lastAt).toLocaleString() : ''}</td>
+    </tr>`).join('');
+  $('#usageTable').innerHTML = rows
+    ? `<thead><tr><th>provider</th><th>模型</th><th class="num">次数</th><th class="num">失败</th><th class="num">输入</th><th class="num">输出</th><th class="num">均耗时</th><th class="num">最近</th></tr></thead><tbody>${rows}</tbody>`
+    : '<tbody><tr><td class="hint" style="padding:14px">还没有记录，发几个请求试试</td></tr></tbody>';
+}
+
+$('#btnUsageClear').onclick = async () => {
+  const ok = await confirmBox('用量统计清零？', '只清统计数字，不影响请求日志与配置。', '清零');
+  if (!ok) return;
+  try {
+    await api('/api/usage/clear', { method: 'POST', body: '{}' });
+    toast('用量统计已清零', 'ok');
+    loadUsage();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
+
 async function loadLogs() {
   try {
     const r = await api('/api/logs?limit=80');
@@ -1650,7 +1738,7 @@ $('#autoRefresh').addEventListener('change', (e) => {
 });
 function startAuto(on) {
   if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
-  if (on) autoTimer = setInterval(() => { if (!document.hidden) { loadLogs(); loadLogMeta(); } }, 4000);
+  if (on) autoTimer = setInterval(() => { if (!document.hidden) { loadLogs(); loadLogMeta(); loadUsage(); } }, 4000);
 }
 
 $('#btnLogPolicy').onclick = () => {
@@ -1740,6 +1828,7 @@ window.addEventListener('beforeunload', (e) => {
   });
   loadLogs();
   loadLogMeta();
+  loadUsage();
   startAuto(auto);
   setInterval(() => {
     if (!document.hidden) load().catch(() => {});
