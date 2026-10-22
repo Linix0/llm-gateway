@@ -233,6 +233,9 @@
     background: var(--panel-3); border: 1px solid var(--line-soft); border-radius: 4px; padding: 1px 5px;
   }
   .mchip.cur { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .mchip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .mchip.rate { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .mchip.bad { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, transparent); text-decoration: line-through; }
 
   .empty {
     margin: 8px; padding: 22px 14px; text-align: center; color: var(--dim); font-size: 12px;
@@ -295,13 +298,23 @@
     display: flex; flex-direction: column; gap: 6px;
   }
   .models.scroll { max-height: 340px; overflow-y: auto; padding-right: 4px; }
-  .mrow { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr) 92px 26px; gap: 6px; align-items: center; }
+  .mrow { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr) 92px 78px 26px 26px; gap: 6px; align-items: center; }
   .mrow input { padding: 6px 8px; font-size: 12px; font-family: var(--mono); }
   .mrow input.mname { font-family: inherit; }
   @media (max-width: 640px) {
-    .mrow { grid-template-columns: minmax(0,1fr) 26px; }
+    .mrow { grid-template-columns: minmax(0,1fr) 78px 26px 26px; }
     .mrow input.mname, .mrow input.mctx { display: none; }
   }
+  /* 模型行测活状态 */
+  .mstate {
+    font-family: var(--mono); font-size: 11px; line-height: 1.25; text-align: right;
+    color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mstate.ok { color: var(--ok); }
+  .mstate.rate { color: var(--warn); }
+  .mstate.bad { color: var(--err); }
+  .mstate.load { color: var(--muted); }
+  .mrow.testing { opacity: .65; }
   .add-model {
     margin-top: 7px; width: 100%; padding: 7px; border-radius: var(--r-xs);
     border: 1px dashed var(--line); background: transparent; color: var(--muted);
@@ -505,7 +518,8 @@
             <li class="empty">加载中…</li>
           </ul>
           <div class="card-foot">
-            <button class="btn subtle sm" id="btnTestAll">全部测活</button>
+            <button class="btn subtle sm" id="btnTestAll">全部测连接</button>
+            <button class="btn subtle sm" id="btnTestAllModels">测所有模型</button>
             <div class="grow"></div>
             <span class="hint" id="testAllHint"></span>
           </div>
@@ -596,8 +610,13 @@
             <div class="sec-body">
               <div class="models" id="modelRows"></div>
               <button class="add-model" id="btnAddModel">+ 添加模型</button>
+              <div style="display:flex;gap:6px;align-items:center;margin-top:7px">
+                <button class="btn subtle sm" id="btnTestModels">测活全部模型</button>
+                <span class="hint" id="testModelsHint"></span>
+              </div>
               <div class="hint" style="margin-top:8px">
-                上下文留空用上游默认值；填 <span class="mono">262144</span> 会写进 <span class="mono">/v1/models</span>。
+                测活会真的调用一次（<span class="mono">max_tokens=1</span>），串行执行以避开上游限速；
+                上下文留空用上游默认值，填 <span class="mono">262144</span> 会写进 <span class="mono">/v1/models</span>。
               </div>
             </div>
           </div>
@@ -757,6 +776,8 @@ let selId = null;
 let isNew = false;
 let dirty = false;
 let provStatus = {};
+/** 模型级测活结果：providerId -> { modelId: result } */
+const modelStatus = {};
 let provOpen = new Set();
 let provFilter = '';
 let logs = [];
@@ -1008,8 +1029,12 @@ function renderList() {
         </div>
         <button class="prov-more" title="展开模型" aria-label="展开模型">▶</button>
       </div>
-      ${models.length ? `<div class="prov-models">${models.slice(0, 40).map((m) =>
-        `<span class="mchip ${m.id === state.activeModel ? 'cur' : ''}">${escapeHtml(m.id)}</span>`).join('')}</div>` : ''}
+      ${models.length ? `<div class="prov-models">${models.slice(0, 40).map((m) => {
+        const ms = (modelStatus[p.id] || {})[m.id];
+        const cls = [m.id === state.activeModel ? 'cur' : '', ms ? (ms.kind === 'ok' ? 'ok' : ms.kind === 'rate' ? 'rate' : 'bad') : ''].filter(Boolean).join(' ');
+        const tip = ms ? `${m.id} · ${ms.ok ? '可用' : KIND_TEXT[ms.kind] || '失败'}${ms.status ? ' · HTTP ' + ms.status : ''}${ms.ms != null ? ' · ' + ms.ms + 'ms' : ''}${ms.message && !ms.ok ? '\n' + ms.message : ''}` : m.id;
+        return `<span class="mchip ${cls}" title="${escapeHtml(tip)}">${escapeHtml(m.id)}</span>`;
+      }).join('')}</div>` : ''}
     </li>`;
   }).join('');
 
@@ -1036,12 +1061,20 @@ function addModelRow(m) {
     <input class="mid mono" placeholder="模型 ID" value="${escapeHtml(m && m.id ? m.id : '')}" autocomplete="off" spellcheck="false" />
     <input class="mname" placeholder="显示名（可选）" value="${escapeHtml(m && m.name ? m.name : '')}" autocomplete="off" />
     <input class="mctx mono" placeholder="上下文" inputmode="numeric" value="${escapeHtml(m && m.contextWindow ? m.contextWindow : '')}" autocomplete="off" />
+    <span class="mstate" title="尚未测活"></span>
+    <button class="icon-btn mtest" title="测活这个模型（发一次 max_tokens=1 的极小请求）" aria-label="测活这个模型" style="width:26px;height:26px;font-size:11px">⚡</button>
     <button class="icon-btn danger" title="删除这一行" aria-label="删除这一行" style="width:26px;height:26px;font-size:11px">✕</button>`;
-  row.querySelector('.icon-btn').onclick = () => {
+  row.querySelector('.icon-btn.danger').onclick = () => {
     row.remove();
     if (!$$('#modelRows .mrow').length) addModelRow();
     updateModelCount();
     setDirty(true);
+  };
+  row.querySelector('.mtest').onclick = () => {
+    const id = row.querySelector('.mid').value.trim();
+    if (!id) return toast('先填模型 ID', 'err');
+    if (isNew || !selId) return toast('先保存供应商再测活', 'err');
+    runModelTests(selId, [id], [row]);
   };
   row.querySelectorAll('input').forEach((i) => (i.oninput = () => setDirty(true)));
   $('#modelRows').appendChild(row);
@@ -1073,6 +1106,7 @@ function setModelRows(models) {
   box.innerHTML = '';
   (models && models.length ? models : [{}]).forEach((m) => addModelRow(m));
   updateModelCount();
+  paintRowsFromStatus();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1449,6 +1483,141 @@ $('#btnTestAll').onclick = async () => {
   $('#testAllHint').textContent = `${okN}/${results.length} 可用`;
   if (okN === results.length) toast('全部供应商连接正常', 'ok');
   else toast(results.filter((r) => !r.ok).map((r) => r.id).join('、') + ' 连接异常', 'err');
+};
+
+/* ------------------------------------------------------------------ */
+/* 模型级真实测活                                                       */
+/* ------------------------------------------------------------------ */
+const KIND_TEXT = {
+  ok: '可用', rate: '限流·未验证', auth: '无权限', missing: '模型不存在',
+  reject: '参数被拒', upstream: '上游故障', net: '网络/超时', err: '失败'
+};
+
+function paintState(el, res) {
+  if (!el) return;
+  const k = res.kind || 'err';
+  el.className = 'mstate ' + (k === 'ok' ? 'ok' : k === 'rate' ? 'rate' : k === 'load' ? 'load' : 'bad');
+  if (k === 'load') { el.textContent = '…'; el.title = '测活中'; return; }
+  const ms = res.ms != null ? res.ms + 'ms' : '';
+  el.textContent = (res.ok ? '✓ ' : k === 'rate' ? '⧗ ' : '✗ ') + (res.ok ? ms : KIND_TEXT[k] || '失败');
+  el.title = [
+    res.ok ? '可用' : KIND_TEXT[k] || '失败',
+    res.status ? 'HTTP ' + res.status : '',
+    ms,
+    res.upstream && res.upstream !== res.model ? '实际请求 ' + res.upstream : '',
+    res.message && !res.ok ? res.message : ''
+  ].filter(Boolean).join(' · ');
+}
+
+/** 按已保存的结果刷新当前编辑器的模型行（切换供应商后能回看上次测活结果） */
+function paintRowsFromStatus() {
+  const store = modelStatus[selId] || {};
+  $$('#modelRows .mrow').forEach((r) => {
+    const id = r.querySelector('.mid').value.trim();
+    const el = r.querySelector('.mstate');
+    if (!el) return;
+    if (store[id]) paintState(el, store[id]);
+    else { el.className = 'mstate'; el.textContent = ''; el.title = '尚未测活'; }
+  });
+}
+
+/** 串行批量测活：一次请求让服务端按顺序跑，结果写回对应模型行 */
+async function runModelTests(providerId, modelIds, rows, hintEl) {
+  if (!modelIds.length) return { ok: 0, total: 0 };
+  const cleanIds = modelIds.filter(Boolean);
+  if (!cleanIds.length) { toast('没有可测的模型', 'err'); return { ok: 0, total: 0 }; }
+  const pairs = cleanIds.map((id, i) => ({ id, row: rows ? rows[i] : null }));
+  pairs.forEach((x) => {
+    if (!x.row) return;
+    x.row.classList.add('testing');
+    paintState(x.row.querySelector('.mstate'), { kind: 'load' });
+  });
+  if (hintEl) hintEl.textContent = `测活中 0/${cleanIds.length}…`;
+  try {
+    const r = await api('/api/test/models', {
+      method: 'POST',
+      body: JSON.stringify({ items: cleanIds.map((m) => ({ provider: providerId, model: m })) })
+    });
+    const map = new Map((r.items || []).map((x) => [x.model, x]));
+    // 结果存下来，左侧列表的模型 chip 会据此着色
+    const store = modelStatus[providerId] || (modelStatus[providerId] = {});
+    (r.items || []).forEach((x) => { store[x.model] = x; });
+    pairs.forEach((x) => {
+      if (!x.row) return;
+      x.row.classList.remove('testing');
+      paintState(x.row.querySelector('.mstate'), map.get(x.id) || { kind: 'err', message: '无结果' });
+    });
+    if (selId === providerId) paintRowsFromStatus();
+    renderList();
+    const okN = (r.items || []).filter((x) => x.ok).length;
+    if (hintEl) hintEl.textContent = `${okN}/${cleanIds.length} 可用`;
+    return { ok: okN, total: cleanIds.length, items: r.items || [] };
+  } catch (e) {
+    pairs.forEach((x) => {
+      if (!x.row) return;
+      x.row.classList.remove('testing');
+      paintState(x.row.querySelector('.mstate'), { kind: 'err', message: e.message });
+    });
+    if (hintEl) hintEl.textContent = '测活失败';
+    throw e;
+  }
+}
+
+/** 当前编辑供应商：测活它下面的全部模型行 */
+$('#btnTestModels').onclick = async () => {
+  if (isNew || !selId) return toast('先保存供应商再测活', 'err');
+  const rows = $$('#modelRows .mrow').filter((r) => r.querySelector('.mid').value.trim());
+  if (!rows.length) return toast('没有模型可测', 'err');
+  const btn = $('#btnTestModels');
+  btn.disabled = true;
+  try {
+    const r = await runModelTests(selId, rows.map((x) => x.querySelector('.mid').value.trim()), rows, $('#testModelsHint'));
+    toast(`测活完成：${r.ok}/${r.total} 可用`, r.ok ? 'ok' : 'err');
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+/** 全局：按供应商分组，串行测活所有模型（只影响列表里的状态点） */
+$('#btnTestAllModels').onclick = async () => {
+  if (!state.providers.length) return;
+  const all = state.providers.filter((p) => (p.models || []).length);
+  const total = all.reduce((a, p) => a + p.models.length, 0);
+  if (!total) return toast('还没有任何模型', 'err');
+  const ok = await confirmBox(
+    `测活全部 ${total} 个模型？`,
+    '会对每个模型真实调用一次（max_tokens=1），串行执行以避免触发上游限速。遇到限流会标记为「限流·未验证」而不是失败。',
+    '开始测活'
+  );
+  if (!ok) return;
+  const btn = $('#btnTestAllModels');
+  btn.disabled = true;
+  let okN = 0;
+  try {
+    for (const p of all) {
+      $('#testAllHint').textContent = `测活 ${p.id}…`;
+      let rows = null;
+      if (selId === p.id) {
+        const byId = new Map($$('#modelRows .mrow').map((r) => [r.querySelector('.mid').value.trim(), r]));
+        rows = p.models.map((m) => byId.get(m.id) || null);
+      }
+      const r = await runModelTests(p.id, p.models.map((m) => m.id), rows, null);
+      okN += r.ok;
+      const bad = (r.items || []).filter((x) => !x.ok);
+      if (bad.length) {
+        console.warn('[测活失败]', p.id, bad);
+        toast(`${p.id}：${bad.map((x) => x.model + '(' + (KIND_TEXT[x.kind] || '失败') + ')').join('、')}`, 'err');
+      }
+    }
+    $('#testAllHint').textContent = `模型 ${okN}/${total} 可用`;
+    toast(`全部模型测活完成：${okN}/${total} 可用`, okN ? 'ok' : 'err');
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
 };
 
 $('#btnDel').onclick = async () => {

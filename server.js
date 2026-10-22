@@ -609,6 +609,34 @@ async function handleAdmin(req, res, pathname, query) {
     }
   }
 
+  /** 单模型真实测活：body { provider, model } */
+  if (pathname === '/api/test/model' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const p = cfg.providers.find((x) => x.id === body.provider);
+    if (!p) return sendJson(res, 404, { error: { message: 'provider 不存在' } });
+    if (!body.model) return sendJson(res, 400, { error: { message: '缺少 model' } });
+    return sendJson(res, 200, await testModel(p, String(body.model)));
+  }
+
+  /** 批量模型测活：串行 + 节流（上游常有并发/RPM 限制，并发打会全是 429 假失败） */
+  if (pathname === '/api/test/models' && method === 'POST') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const items = Array.isArray(body.items) ? body.items.slice(0, 200) : [];
+    const delay = clampNum(body.delayMs, 0, 10000, 1200);
+    const out = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i] || {};
+      const p = cfg.providers.find((x) => x.id === it.provider);
+      if (!p) {
+        out.push({ provider: it.provider, model: it.model, ok: false, kind: 'err', status: 0, ms: 0, message: 'provider 不存在' });
+      } else {
+        out.push(await testModel(p, String(it.model || '')));
+      }
+      if (delay > 0 && i < items.length - 1) await new Promise((r) => setTimeout(r, delay));
+    }
+    return sendJson(res, 200, { items: out, okCount: out.filter((x) => x.ok).length });
+  }
+
   if (pathname === '/api/logs' && method === 'GET') {
     const limit = Math.min(Number(query.get('limit') || 50), MAX_RECENT);
     return sendJson(res, 200, { items: recent.slice(-limit).reverse() });
@@ -716,6 +744,75 @@ function testProvider(p) {
     );
     upReq.on('timeout', () => upReq.destroy(new Error('连接超时(15s)')));
     upReq.on('error', (e) => reject(e));
+    upReq.end();
+  });
+}
+
+/**
+ * 单模型真实测活：发一次极小请求（max_tokens=1），拿回真实可用性与错误分类。
+ * kind: ok 可用 / rate 限流未验证 / auth 鉴权或权限 / missing 模型不存在
+ *       reject 参数被上游拒绝 / upstream 上游故障 / net 网络或超时 / err 其它
+ */
+function testModel(p, modelId) {
+  return new Promise((resolve) => {
+    let target;
+    try {
+      target = new URL(p.baseUrl);
+    } catch (_) {
+      return resolve({ ok: false, kind: 'net', status: 0, ms: 0, provider: p.id, model: modelId, message: 'baseUrl 不合法' });
+    }
+
+    const entry = (p.models || []).find((m) => m.id === modelId) || null;
+    const upstream = (entry && entry.upstream) || modelId;
+    const isAnth = p.api === 'anthropic';
+    const isHttps = target.protocol === 'https:';
+    const base = target.pathname.replace(/\/+$/, '');
+    const pth = isAnth
+      ? (base.endsWith('/messages') ? base : base + '/messages')
+      : (base.endsWith('/chat/completions') ? base : base + '/chat/completions');
+
+    const payload = isAnth
+      ? { model: upstream, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }
+      : { model: upstream, max_tokens: 1, stream: false, messages: [{ role: 'user', content: 'hi' }] };
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+
+    const key = resolveKey(p);
+    const headers = { 'content-type': 'application/json', 'content-length': body.length, accept: 'application/json' };
+    if (isAnth) {
+      if (key) headers['x-api-key'] = key;
+      headers['anthropic-version'] = '2023-06-01';
+    } else if (key) {
+      headers.authorization = 'Bearer ' + key;
+    }
+
+    const started = Date.now();
+    const done = (r) => resolve(Object.assign({ ms: Date.now() - started, provider: p.id, model: modelId, upstream }, r));
+
+    const upReq = (isHttps ? https : http).request(
+      { protocol: target.protocol, hostname: target.hostname, port: target.port || (isHttps ? 443 : 80), path: pth, method: 'POST', headers, timeout: 30000 },
+      (upRes) => {
+        let buf = '';
+        upRes.on('data', (c) => (buf += c));
+        upRes.on('end', () => {
+          const status = upRes.statusCode || 0;
+          let realModel = null;
+          let msg = '';
+          try {
+            const j = JSON.parse(buf);
+            realModel = j.model || (j.message && j.message.model) || null;
+            msg = (j.error && (j.error.message || j.error.code)) || j.detail || j.message || '';
+          } catch (_) {
+            msg = buf.slice(0, 160);
+          }
+          if (status >= 200 && status < 300) return done({ ok: true, kind: 'ok', status, model: realModel || upstream, message: '可用' });
+          const kind = status === 429 ? 'rate' : (status === 401 || status === 403) ? 'auth' : status === 404 ? 'missing' : status === 400 ? 'reject' : status >= 500 ? 'upstream' : 'err';
+          done({ ok: false, kind, status, message: String(msg || ('HTTP ' + status)).slice(0, 200) });
+        });
+      }
+    );
+    upReq.on('timeout', () => { upReq.destroy(); done({ ok: false, kind: 'net', status: 0, message: '请求超时(30s)' }); });
+    upReq.on('error', (e) => done({ ok: false, kind: 'net', status: 0, message: e.message }));
+    upReq.write(body);
     upReq.end();
   });
 }

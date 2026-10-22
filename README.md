@@ -12,6 +12,8 @@
 - 后台常驻 + 开机自启，无窗口运行
 - **模型由网关决定**：客户端写什么模型名都不影响，实际调用哪个模型在网关界面上选
 - 请求日志按大小自动轮转，不会无限增长
+- **模型级真实测活**：界面上对单个/全部模型发极小请求（`max_tokens=1`）验证真实可用性，
+  串行节流避免触发上游限速，429 单独标记为「限流·未验证」而不是误报失败
 
 ```
 Codex / Cursor / SDK
@@ -213,6 +215,9 @@ llm-gateway/
 - **亮/暗双主题**：右上角切换，或用 `?theme=light` / `?theme=dark` 固定；选择记在 localStorage。
 - **分区可折叠**：路由与模型、Provider 编辑、接入片段、请求日志四块各自可收起，右上角「全部折叠/展开」，状态记住。
 - **模型行编辑器**：provider 的模型列表逐行增删改，支持 `upstream` 重映射，不用手写 JSON。
+- **模型级测活**：每个模型行有「⚡」按钮（真实调用一次 `max_tokens=1`），结果标在行内；
+  「测活全部模型」测当前 provider 的全部模型，「测所有模型」跨 provider 全量跑（串行 + 节流）。
+  结果会同时着色左侧供应商列表里的模型 chip：绿=可用、黄=限流未验证、红=不可用（划线）。
 - **接入片段**：按 provider 直接给出 Codex / Cursor / Anthropic 的配置片段，一键复制。
 - **请求日志**：按状态筛选、耗时条形图、自动刷新（默认 4 秒，可在界面关掉），并带日志容量与轮转策略面板。
 - `Ctrl/Cmd + S` 保存；有未保存改动时离开页面会提醒。
@@ -226,7 +231,9 @@ llm-gateway/
 | POST | `/api/providers` | 新增/更新 provider |
 | DELETE | `/api/providers/{id}` | 删除 provider |
 | POST | `/api/active` | 切换当前 provider，body `{"id":"..."}` |
-| POST | `/api/test` | 探活，body `{"id":"..."}` |
+| POST | `/api/test` | 探活（只查 `/models` 列表，不调用模型），body `{"id":"..."}` |
+| POST | `/api/test/model` | 单模型真实测活（极小请求），body `{"provider":"nextapi","model":"glm-5.3"}` |
+| POST | `/api/test/models` | 批量模型测活（**串行+节流**），body `{"items":[{"provider":"...","model":"..."}],"delayMs":1200}` |
 | POST | `/api/model` | 设置当前调用模型，body `{"model":"glm-5.3"}` |
 | POST | `/api/policy` | 设置路由策略，body `{"policy":"fixed"\|"auto"}` |
 | GET | `/api/logs?limit=50` | 最近请求日志 |
@@ -235,6 +242,21 @@ llm-gateway/
 | POST | `/api/logs/clear` | 清空活动日志，body `{"archives":true}` 连归档一起删 |
 | GET | `/api/logs/download?name=requests.log` | 下载日志或归档文件 |
 | POST | `/api/reload` | 重新读取 config.json |
+
+**测活结果分类**（`/api/test/model` 与 `/api/test/models` 返回的 `kind` 字段）：
+
+| kind | 含义 | 界面显示 |
+|---|---|---|
+| `ok` | 2xx，真实可用 | 绿 ✓ + 耗时 |
+| `rate` | 429，上游限流，**不代表模型不可用** | 黄 ⧗ 限流·未验证 |
+| `auth` | 401/403，key 失效或等级不够 | 红 ✗ 无权限 |
+| `missing` | 404，模型不存在/已下线 | 红 ✗ 模型不存在 |
+| `reject` | 400，参数被上游拒绝 | 红 ✗ 参数被拒 |
+| `upstream` | 5xx，上游服务故障 | 红 ✗ 上游故障 |
+| `net` | 连接失败/超时 | 红 ✗ 网络/超时 |
+
+批量测活默认每个请求间隔 1.2s（`delayMs`，0–10000 可调）。上游普遍有并发和每分钟调用数
+限制，串行节流能保证结果可信；想更快可以把 `delayMs` 调小，但可能得到一批 `rate` 假失败。
 
 ## 安全说明
 
