@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LLM Gateway · 本地大模型代理</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --line: #2a2f3a;
+    --text: #e6e9ef;
+    --muted: #8b93a3;
+    --accent: #4f8cff;
+    --ok: #35c48a;
+    --warn: #e8a33d;
+    --err: #f0655d;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  code, .mono { font-family: "Cascadia Code", Consolas, "JetBrains Mono", monospace; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 22px 60px; }
+
+  header.top { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .logo {
+    width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #4f8cff, #7a5cff); font-weight: 700; font-size: 15px;
+  }
+  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: .2px; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .spacer { flex: 1; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel); font-size: 12.5px; color: var(--muted);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(53,196,138,.15); }
+  .dot.off { background: var(--err); }
+
+  .grid { display: grid; grid-template-columns: 300px 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .card h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
+    margin: 0; padding: 13px 15px; border-bottom: 1px solid var(--line); font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card .body { padding: 15px; }
+
+  .prov {
+    display: flex; align-items: center; gap: 10px; padding: 11px 13px; cursor: pointer;
+    border-bottom: 1px solid var(--line); transition: background .12s;
+  }
+  .prov:last-child { border-bottom: none; }
+  .prov:hover { background: var(--panel-2); }
+  .prov.sel { background: #1b2130; box-shadow: inset 2px 0 0 var(--accent); }
+  .prov .name { font-weight: 600; font-size: 13.5px; }
+  .prov .meta { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+  .badge {
+    font-size: 10.5px; padding: 2px 7px; border-radius: 999px; font-weight: 600; letter-spacing: .3px;
+    background: rgba(53,196,138,.14); color: var(--ok); border: 1px solid rgba(53,196,138,.3);
+  }
+  .badge.type { background: rgba(79,140,255,.12); color: #8fb5ff; border-color: rgba(79,140,255,.3); }
+
+  label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 5px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  input, select, textarea {
+    width: 100%; background: #12151c; border: 1px solid var(--line); color: var(--text);
+    border-radius: 8px; padding: 9px 11px; font-size: 13px; outline: none; font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 118px; font-family: "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
+
+  .btns { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 4px; }
+  button {
+    background: var(--accent); color: #fff; border: 0; padding: 9px 15px; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer; transition: filter .12s;
+  }
+  button:hover { filter: brightness(1.08); }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  button.danger { background: transparent; border: 1px solid rgba(240,101,93,.45); color: var(--err); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  .hint { color: var(--muted); font-size: 12px; margin-top: 9px; line-height: 1.6; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 11.5px; text-transform: uppercase; letter-spacing: .5px; }
+  td { padding: 8px 10px; border-bottom: 1px solid #22262f; }
+  tr:last-child td { border-bottom: none; }
+  .s-2 { color: var(--ok); } .s-4 { color: var(--warn); } .s-5 { color: var(--err); }
+
+  pre.snip {
+    background: #12151c; border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+    overflow: auto; font-size: 12px; margin: 0; color: #c9d1e0;
+  }
+  .tag { display: inline-block; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+
+  #toast {
+    position: fixed; right: 22px; bottom: 22px; background: var(--panel-2); border: 1px solid var(--line);
+    padding: 11px 15px; border-radius: 9px; font-size: 13px; opacity: 0; transform: translateY(8px);
+    transition: all .18s; pointer-events: none; max-width: 420px;
+  }
+  #toast.show { opacity: 1; transform: none; }
+  #toast.ok { border-color: rgba(53,196,138,.4); }
+  #toast.err { border-color: rgba(240,101,93,.4); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="logo">LG</div>
+    <div>
+      <h1>LLM Gateway</h1>
+      <div class="sub">本地统一入口 · 多模型自由切换</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="pill"><span class="dot" id="dot"></span><span id="statusText">连接中…</span></div>
+    <div class="pill mono" id="endpoint">127.0.0.1:8787</div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Providers <span class="spacer"></span><button class="ghost" id="btnNew" style="padding:4px 9px;font-size:12px">+ 新增</button></h2>
+      <div id="list"></div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2 id="formTitle">编辑 Provider</h2>
+        <div class="body">
+          <div class="row">
+            <div>
+              <label>ID（路由用，唯一）</label>
+              <input id="f_id" placeholder="nextapi" />
+            </div>
+            <div>
+              <label>显示名称</label>
+              <input id="f_name" placeholder="NextApi" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>协议类型</label>
+              <select id="f_api">
+                <option value="openai">OpenAI 兼容（/v1/chat、/v1/responses）</option>
+                <option value="anthropic">Anthropic（/v1/messages）</option>
+              </select>
+            </div>
+            <div>
+              <label>Base URL</label>
+              <input id="f_base" placeholder="https://api.example.com/v1" />
+            </div>
+          </div>
+          <div style="margin-bottom:12px">
+            <label>API Key（支持 <span class="mono">env:变量名</span> 引用环境变量）</label>
+            <input id="f_key" placeholder="sk-... 或 env:MY_KEY" />
+          </div>
+          <div style="margin-bottom:12px">
+            <label>模型列表（每行 <span class="mono">模型ID | 显示名 | 上下文</span>，后两项可省）</label>
+            <textarea id="f_models" placeholder="deepseek-v4.1-flash | DeepSeek V4.1 Flash | 128000"></textarea>
+          </div>
+          <div class="btns">
+            <button id="btnSave">保存</button>
+            <button class="ghost" id="btnActive">设为当前</button>
+            <button class="ghost" id="btnTest">测试连接</button>
+            <button class="danger" id="btnDel">删除</button>
+          </div>
+          <div class="hint" id="testResult"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px">
+        <h2>客户端接入</h2>
+        <div class="body">
+          <div class="tag">Codex（~/.codex/config.toml）</div>
+          <pre class="snip" id="snipCodex"></pre>
+          <div class="tag" style="margin-top:14px">Cursor / 任意 OpenAI 兼容客户端</div>
+          <pre class="snip" id="snipCursor"></pre>
+          <div class="tag" style="margin-top:14px">路由规则</div>
+          <div class="hint" style="margin-top:0">
+            · 模型名用 <span class="mono">providerId/modelId</span> → 精确指定走哪个上游<br />
+            · 模型名只被某一个 provider 声明 → 自动路由到它<br />
+            · 其他情况 → 走「当前」provider（key 由网关注入，客户端随便填）
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h2>请求日志 <span class="spacer"></span><button class="ghost" id="btnLogs" style="padding:4px 9px;font-size:12px">刷新</button></h2>
+    <div class="body" style="padding:0">
+      <table>
+        <thead><tr><th style="width:70px">状态</th><th style="width:130px">Provider</th><th>模型</th><th style="width:180px">路径</th><th style="width:80px">耗时</th><th style="width:90px">时间</th></tr></thead>
+        <tbody id="logs"><tr><td colspan="6" style="color:var(--muted)">暂无请求</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let state = { providers: [], active: '' };
+let selId = null;
+let isNew = false;
+
+function toast(msg, cls) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'show ' + (cls || '');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => (t.className = ''), 2600);
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, Object.assign({ headers: { 'content-type': 'application/json' } }, opts));
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+  return j;
+}
+
+function parseModels(text) {
+  return text.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+    const [id, name, ctx] = line.split('|').map(s => (s || '').trim());
+    const m = { id };
+    if (name) m.name = name;
+    if (ctx && !isNaN(Number(ctx))) m.contextWindow = Number(ctx);
+    return m;
+  }).filter(m => m.id);
+}
+
+function modelsToText(models) {
+  return (models || []).map(m => [m.id, m.name || '', m.contextWindow || ''].join(' | ').replace(/\s\|\s\|\s$/, '')).join('\n');
+}
+
+function renderList() {
+  const el = $('#list');
+  if (!state.providers.length) { el.innerHTML = '<div style="padding:15px;color:var(--muted)">还没有配置，点右上角新增</div>'; return; }
+  el.innerHTML = state.providers.map(p => `
+    <div class="prov ${p.id === selId ? 'sel' : ''}" data-id="${p.id}">
+      <div style="flex:1;min-width:0">
+        <div class="name">${escapeHtml(p.name || p.id)}</div>
+        <div class="meta mono">${escapeHtml(p.baseUrl)}</div>
+      </div>
+      ${p.id === state.active ? '<span class="badge">当前</span>' : ''}
+      <span class="badge type">${p.api === 'anthropic' ? 'A' : 'O'}</span>
+    </div>`).join('');
+  el.querySelectorAll('.prov').forEach(n => n.onclick = () => select(n.dataset.id));
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function select(id) {
+  selId = id;
+  isNew = false;
+  const p = state.providers.find(x => x.id === id);
+  if (!p) return;
+  $('#formTitle').textContent = '编辑 Provider · ' + p.id;
+  $('#f_id').value = p.id;
+  $('#f_id').disabled = true;
+  $('#f_name').value = p.name || '';
+  $('#f_api').value = p.api || 'openai';
+  $('#f_base').value = p.baseUrl || '';
+  $('#f_key').value = p.auth && p.auth.value ? p.auth.value : '';
+  $('#f_models').value = modelsToText(p.models);
+  $('#testResult').textContent = '';
+  $('#btnDel').disabled = state.providers.length <= 1;
+  $('#btnActive').disabled = p.id === state.active;
+  renderList();
+}
+
+function newProvider() {
+  isNew = true;
+  selId = null;
+  $('#formTitle').textContent = '新增 Provider';
+  ['#f_id', '#f_name', '#f_base', '#f_key', '#f_models'].forEach(s => ($(s).value = ''));
+  $('#f_id').disabled = false;
+  $('#f_api').value = 'openai';
+  $('#testResult').textContent = '';
+  renderList();
+}
+
+async function load() {
+  const s = await api('/api/state');
+  state = s;
+  $('#endpoint').textContent = s.server.host + ':' + s.server.port;
+  $('#dot').className = 'dot on';
+  $('#statusText').textContent = '运行中 · 当前 ' + (s.active || '-');
+  const act = s.providers.find(p => p.id === s.active);
+  $('#snipCodex').textContent =
+`[model_providers.localgateway]
+name = "localgateway"
+base_url = "http://${s.server.host}:${s.server.port}/v1"
+wire_api = "responses"
+experimental_bearer_token = "local"
+requires_openai_auth = false
+
+# 顶部两行改成本地网关
+model = "${act && act.models[0] ? act.models[0].id : 'deepseek-v4.1-flash'}"
+model_provider = "localgateway"`;
+  $('#snipCursor').textContent =
+`Base URL: http://${s.server.host}:${s.server.port}/v1
+API Key : local        # 任意填，真实 key 由网关注入
+Model   : ${act && act.models[0] ? act.models[0].id : 'deepseek-v4.1-flash'}`;
+  renderList();
+  if (!selId && s.providers.length) select(s.active || s.providers[0].id);
+}
+
+async function save() {
+  const body = {
+    id: $('#f_id').value.trim(),
+    name: $('#f_name').value.trim() || $('#f_id').value.trim(),
+    api: $('#f_api').value,
+    baseUrl: $('#f_base').value.trim(),
+    models: parseModels($('#f_models').value)
+  };
+  const key = $('#f_key').value.trim();
+  if (key) body.auth = { type: 'bearer', value: key };
+  if (!body.id || !body.baseUrl) return toast('ID 和 Base URL 必填', 'err');
+  try {
+    await api('/api/providers', { method: 'POST', body: JSON.stringify(body) });
+    toast('已保存', 'ok');
+    await load();
+    select(body.id);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+$('#btnSave').onclick = save;
+$('#btnNew').onclick = newProvider;
+$('#btnActive').onclick = async () => {
+  if (!selId) return;
+  try { await api('/api/active', { method: 'POST', body: JSON.stringify({ id: selId }) }); toast('已切换为当前 provider', 'ok'); await load(); select(selId); }
+  catch (e) { toast(e.message, 'err'); }
+};
+$('#btnTest').onclick = async () => {
+  if (!selId) {
+    if (isNew) return toast('先保存再测试', 'err');
+    return;
+  }
+  $('#testResult').textContent = '测试中…';
+  try {
+    const r = await api('/api/test', { method: 'POST', body: JSON.stringify({ id: selId }) });
+    if (r.ok) $('#testResult').innerHTML = `<span style="color:var(--ok)">✓ 连接正常（HTTP ${r.status}${r.models != null ? '，' + r.models + ' 个模型' : ''}）</span>`;
+    else $('#testResult').innerHTML = `<span style="color:var(--err)">✗ HTTP ${r.status}：${escapeHtml(r.message || '')}</span>`;
+  } catch (e) { $('#testResult').innerHTML = `<span style="color:var(--err)">✗ ${escapeHtml(e.message)}</span>`; }
+};
+$('#btnDel').onclick = async () => {
+  if (!selId || !confirm('确认删除 provider「' + selId + '」？')) return;
+  try { await api('/api/providers/' + encodeURIComponent(selId), { method: 'DELETE' }); toast('已删除', 'ok'); selId = null; await load(); }
+  catch (e) { toast(e.message, 'err'); }
+};
+
+async function loadLogs() {
+  try {
+    const r = await api('/api/logs?limit=30');
+    const tb = $('#logs');
+    if (!r.items.length) { tb.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">暂无请求</td></tr>'; return; }
+    tb.innerHTML = r.items.map(i => {
+      const cls = i.status >= 500 ? 's-5' : i.status >= 400 ? 's-4' : 's-2';
+      return `<tr>
+        <td class="${cls} mono">${i.status || '-'}</td>
+        <td class="mono">${escapeHtml(i.provider || '-')}</td>
+        <td class="mono">${escapeHtml(i.model || '-')}</td>
+        <td class="mono" style="color:var(--muted)">${escapeHtml(i.path || '')}</td>
+        <td class="mono">${i.ms != null ? i.ms + 'ms' : '-'}</td>
+        <td class="mono" style="color:var(--muted)">${(i.ts || '').slice(11, 19)}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) { /* 日志失败静默 */ }
+}
+$('#btnLogs').onclick = loadLogs;
+
+load().catch(e => { $('#dot').className = 'dot off'; $('#statusText').textContent = '网关未连接'; });
+loadLogs();
+setInterval(loadLogs, 5000);
+</script>
+</body>
+</html>

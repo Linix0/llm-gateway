@@ -1,0 +1,16 @@
+{
+  "name": "llm-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "本地大模型统一代理：多 provider 配置、一键切换、OpenAI/Anthropic 透传",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "autostart:install": "powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action install",
+    "autostart:uninstall": "powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action uninstall",
+    "autostart:status": "powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action status"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

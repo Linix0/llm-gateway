@@ -1,0 +1,12 @@
+# 本地运行数据（含明文 API key 与请求日志，绝不入库）
+data/config.json
+data/requests.log
+
+# 由 autostart.ps1 生成的启动器，内含本机绝对路径
+start-hidden.vbs
+
+# 常规忽略
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
