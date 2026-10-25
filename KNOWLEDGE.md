@@ -5,10 +5,10 @@
 >
 > **维护纪律**：任何改动都必须同步更新本文件的「变更历史」与相关章节，并提交 git。
 
-- 当前版本：**v1.10.2**（见 `package.json`）
+- 当前版本：**v1.11.0**（见 `package.json`）
 - 仓库：https://github.com/Linix0/llm-gateway （Public / main / MIT）
 - 运行时：Node >= 18，**零第三方依赖**（只 `require` 内置模块）
-- 本机路径：`C:\Users\Administrator\WorkBuddy\2026-10-22-14-09-51\llm-gateway`
+- 本机路径：`C:\Users\Administrator\Desktop\llm-gateway`
 
 ---
 
@@ -97,11 +97,11 @@ graph TB
 | 文件 | 行数级 | 职责 |
 |---|---|---|
 | `public/index.html` | ~510 | 页面结构：左栏 `.sidebar`（品牌/导航/状态/模型胶囊），右栏 `.main` 五个分页 `.page#page-{overview,providers,policy,snippets,logs}`；`<link rel="stylesheet" href="/styles.css">` + `<script src="/app.js">` |
-| `public/styles.css` | ~570 | 全部样式：`:root` / `[data-theme=light]` 双主题变量、侧边导航、卡片折叠、策略页（`.arow`/`.fb-chip`/`.bud-bar`/`.circ-*`）、≤920px 响应式 |
+| `public/styles.css` | ~610 | 全部样式：**令牌驱动的全局布局**——`:root` 颜色/圆角/间距标度（`--sp-1..--sp-5` 统一控制）、扁平 `.panel`（取代 `.card`，无重阴影/无 overflow:hidden 杜绝文字被裁切）、侧边导航、折叠体系、策略页（`.arow`/`.fb-chip`/`.bud-bar`/`.circ-*`）、≤920px 响应式 |
 | `public/app.js` | ~1490 | 全部交互：`showPage()`（localStorage + URL hash）、自动刷新、`HELP` 释意映射、`/api/*` 调用与渲染 |
 
 改界面时注意：三个文件由 `serveStatic` 按 MIME 直出，无构建、无缓存头协商；改完硬刷新即可。
-新增分页要**同时**加导航项（`data-page`）与 `.page` 段；新增卡片要带 `data-cid` 才接入折叠体系。
+新增分页要**同时**加导航项（`data-page`）与 `.page` 段；新增面板要带 `data-cid` 才接入折叠体系。
 
 ### 数据与运维
 
@@ -284,7 +284,7 @@ token 两项 0–1e12；`circuit.threshold` 2–100、`cooldownMs` 5000–360000
 |---|---|
 | 加一个新 provider | 界面「新增」即可；或改 `config.json` 后 `POST /api/reload`。改端口需重启 |
 | 加一个管理 API | 在 `lib/admin-api.js` 的 `handleAdmin()` `if` 链里加一段，返回用 `sendJson()`；同步本文件 §6 与 README |
-| 加一个界面分区 | 在 `public/index.html` 复制 `.card` 结构并带 `data-cid`（自动接入折叠/持久化）；样式写在 `styles.css` 且用变量；逻辑写在 `app.js`。如需独立成页，在 `#nav` 加 `data-page` 项并放 `.page` 段 |
+| 加一个界面分区 | 在 `public/index.html` 复制 `.panel` 结构并带 `data-cid`（自动接入折叠/持久化）；样式写在 `styles.css` 且一律走令牌（间距用 `--sp-*`）；逻辑写在 `app.js`。如需独立成页，在 `#nav` 加 `data-page` 项并放 `.page` 段 |
 | 新增加密/鉴权 | 在 `server.js` 的 `createServer` 入口做，注意别拦 `/healthz` |
 | 新增后端模块 | 放 `lib/`，只依赖下层模块（见 §3 依赖方向，不要成环）；需要配置就 `require('./config')` 拿 `cfg`，**不要自己再读一次文件** |
 | 改 Responses 适配 | 改 `lib/responses-adapter.js`，用真实 `codex exec` 验证（纯对话 + apply_patch 工具调用两条路径） |
@@ -322,6 +322,32 @@ curl --noproxy '*' http://127.0.0.1:8787/api/state   # 确认 runtime.lanes 为�
 ---
 
 ## 9. 变更历史
+
+### v1.11.0 · 闪电测活"无内容"修复 + 全局面板布局重构（前端为主，含一处服务端契约修正）
+
+- **闪电测活（单模型 ⚡）点击后界面无任何结果**：新增 provider-model 保存后点 ⚡ 不显示测活结果，但底部"测活全部模型"正常。
+  **根因**：`lib/tester.js` 的 `testModel()` 成功分支把结果 `model` 字段写成**上游回显的模型名**（`realModel || upstream`），
+  而界面侧 `app.js` 的结果落库（`runModelTests`）与回填（`paintRowsFromStatus`）都以**客户端输入的模型 id**（`row.mid`）为键。
+  上游回显名与配置名不一致时（如 `openrouter/free` 实测回显 `recursive/flint-v1.0:free`），`paintRowsFromStatus` 按 `.mid` 查 `store`
+  命中不到，便把刚画好的状态格清空 → 表现为"闪电测活无内容"。批量测活之所以"看起来正常"，是因为它额外弹了汇总 toast 掩盖了同一缺陷。
+  **修复（双保险）**：
+  1. 服务端契约修正：`testModel()` 成功分支不再覆盖 `model` 字段，结果 `model` 恒等于**请求时的模型 id**（base 里 `model: modelId`）；
+     上游回显名改存到新增的 `realModel` 字段（仅用于 tooltip 展示，不参与键）。
+  2. 客户端加固：`runModelTests()` 改用请求时的 `x.id` 作为落库键（`store[x.id] = res`），与 `paintRowsFromStatus` 的 `.mid` 查找口径一致；
+     `paintState()` 的 tooltip 增加"上游回显 realModel"提示。
+  **验证**：`POST /api/test/models` 对 `openrouter/free` 返回 `model:"openrouter/free"`、`realModel:"recursive/flint-v1.0:free"`——
+  `model` 已等于请求 id，闪电测活回填可命中。
+
+- **布局重构：弃用卡片式，改用全局面板系统**（用户反馈：卡片布局导致部分文字被覆盖/重叠，且不便后续维护）：
+  - 根因：旧版 `.card` 用重阴影 + `overflow:hidden`，标题栏 `h2` 与右侧控件（段控/开关）在同一 flex 行且无 `flex-wrap`/`min-width:0`，
+    窄宽或内容多时标题文字被右侧控件**挤压覆盖**；`.actions` 用负 margin 通栏贴底也容易错位。
+  - 方案：把 `.card` 体系整体重命名为扁平 `.panel`（1px 描边 + 极轻底色，**去掉重阴影与 overflow:hidden**，文字不再被裁切/覆盖）。
+    在 `:root` 引入**全局间距标度 `--sp-1..--sp-5`** 与统一的圆角/颜色令牌，所有间距改由标度驱动，未来调版只改一处；
+    标题栏 `.panel-h` 默认 `flex-wrap: wrap` 且标题 `min-width:0`，控件可自然换行不再压字；`.actions` 改为普通流（去负 margin）。整体比旧版更紧凑。
+  - 改动点：`public/styles.css` 全面重写（令牌 + 布局骨架 + 面板 + 分区 + 表单 + 按钮 + 各页 + 响应式）；
+    `public/index.html` 的 `card*` 类改为 `panel*`；`public/app.js` 折叠选择器 `.card[data-cid]` → `.panel[data-cid]`。
+    折叠依赖的 `data-cid`/`data-toggle`/`data-sec` 属性不变，行为兼容。
+  - 给后续维护：界面新增区块请复制 `.panel` 结构并带 `data-cid`（自动接入折叠/持久化）；样式一律走 `styles.css` 令牌，不要在 HTML 写散落 inline 间距。
 
 ### v1.10.2 · P0：Codex（/v1/responses）请求全部挂起
 

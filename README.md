@@ -252,7 +252,7 @@ llm-gateway/
 │   └── responses-adapter.js  Codex Responses ⇄ chat/completions 协议翻译
 ├── public/
 │   ├── index.html            管理界面结构（侧边导航，无构建）
-│   ├── styles.css            样式（双主题、响应式）
+│   ├── styles.css            样式（令牌驱动全局布局、扁平面板取代卡片、双主题、响应式）
 │   └── app.js                界面交互
 ├── KNOWLEDGE.md              知识图谱 / 维护手册
 ├── autostart.ps1             Windows 开机自启管理

@@ -144,7 +144,7 @@ let collapsed = new Set();
 })();
 
 function applyCollapse() {
-  $$('.card[data-cid]').forEach((c) => c.classList.toggle('collapsed', collapsed.has(c.dataset.cid)));
+  $$('.panel[data-cid]').forEach((c) => c.classList.toggle('collapsed', collapsed.has(c.dataset.cid)));
 }
 function toggleCard(id, force) {
   const willCollapse = force === undefined ? !collapsed.has(id) : force;
@@ -1277,6 +1277,7 @@ function paintState(el, res) {
     res.status ? 'HTTP ' + res.status : '',
     ms,
     res.upstream && res.upstream !== res.model ? '实际请求 ' + res.upstream : '',
+    res.realModel && res.realModel !== res.model ? '上游回显 ' + res.realModel : '',
     res.message && !res.ok ? res.message : ''
   ].filter(Boolean).join(' · ');
 }
@@ -1310,14 +1311,16 @@ async function runModelTests(providerId, modelIds, rows, hintEl) {
       method: 'POST',
       body: JSON.stringify({ items: cleanIds.map((m) => ({ provider: providerId, model: m })) })
     });
-    const map = new Map((r.items || []).map((x) => [x.model, x]));
-    // 结果存下来，左侧列表的模型 chip 会据此着色
+    // 以"请求时的模型 id"作为对齐键：上游回显的模型名可能和配置不一致，
+    // 必须以客户端输入 id 落库，否则 paintRowsFromStatus 按 .mid 查会查不到、单元格被清空（闪电测活"无内容"的根因）。
+    const byReq = new Map((r.items || []).map((x) => [x.model, x]));
     const store = modelStatus[providerId] || (modelStatus[providerId] = {});
-    (r.items || []).forEach((x) => { store[x.model] = x; });
     pairs.forEach((x) => {
+      const res = byReq.get(x.id) || null;
+      if (res) store[x.id] = res;          // 落库键 = 客户端模型 id（与服务端 model 字段一致）
       if (!x.row) return;
       x.row.classList.remove('testing');
-      paintState(x.row.querySelector('.mstate'), map.get(x.id) || { kind: 'err', message: '无结果' });
+      paintState(x.row.querySelector('.mstate'), res || { kind: 'err', message: '无结果' });
     });
     if (selId === providerId) paintRowsFromStatus();
     renderList();
