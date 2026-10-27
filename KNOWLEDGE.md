@@ -5,7 +5,7 @@
 >
 > **维护纪律**：任何改动都必须同步更新本文件的「变更历史」与相关章节，并提交 git。
 
-- 当前版本：**v1.11.0**（见 `package.json`）
+- 当前版本：**v1.11.1**（见 `package.json`）
 - 仓库：https://github.com/Linix0/llm-gateway （Public / main / MIT）
 - 运行时：Node >= 18，**零第三方依赖**（只 `require` 内置模块）
 - 本机路径：`C:\Users\Administrator\Desktop\llm-gateway`
@@ -288,6 +288,8 @@ token 两项 0–1e12；`circuit.threshold` 2–100、`cooldownMs` 5000–360000
 | 新增加密/鉴权 | 在 `server.js` 的 `createServer` 入口做，注意别拦 `/healthz` |
 | 新增后端模块 | 放 `lib/`，只依赖下层模块（见 §3 依赖方向，不要成环）；需要配置就 `require('./config')` 拿 `cfg`，**不要自己再读一次文件** |
 | 改 Responses 适配 | 改 `lib/responses-adapter.js`，用真实 `codex exec` 验证（纯对话 + apply_patch 工具调用两条路径） |
+| 迁移目录/换机器后自启失效 | `start-hidden.vbs` 里写的是**绝对路径**，项目一挪任务就崩（`LastTaskResult = 0x8007000B`「不是有效的 Win32 应用程序」）。在新目录执行 `autostart.ps1 -Action install`，会按脚本自身位置重建 VBS 并覆盖同名任务 |
+| 启停/重启服务 | `autostart.ps1 -Action start\|stop\|restart\|status`。因为 VBS 是**非等待启动**（`wscript` 拉起 node 后立刻退出），`Stop-ScheduledTask` 停不掉 node；脚本内 `Stop-Gateway` 按命令行匹配 `server.js` 结束进程，再等端口释放 |
 
 ### 验证清单（改完必跑）
 
@@ -323,7 +325,31 @@ curl --noproxy '*' http://127.0.0.1:8787/api/state   # 确认 runtime.lanes 为�
 
 ## 9. 变更历史
 
+### v1.11.1 · 开机自启修复（迁移目录后任务失效）+ 启停语义修正
+
+- **迁移项目目录后，8787 端口不再随开机启动**：任务 `LlmGateway` 仍在且状态 `Ready`，但 `LastTaskResult = 2147942667`（`0x8007000B`，
+  「不是有效的 Win32 应用程序」），服务始终起不来。
+  **根因**：`start-hidden.vbs` 是 `autostart.ps1 -Action install` 用 `$Root`（脚本所在目录）**生成**的，里面写死了**绝对路径**。
+  项目从旧工作区迁到 `C:\Users\Administrator\Desktop\llm-gateway` 后，VBS 仍指向已被删除的旧目录，
+  `wscript` 找不到 `server.js` 便直接失败；失败发生在 `wscript` 层，`node` 从未被调起，所以日志里也看不到痕迹。
+  **修复**：在新目录重新执行 `autostart.ps1 -Action install` —— 按脚本自身位置重建 VBS、覆盖同名任务，并立即拉起服务。
+  **验证**：`LastTaskResult = 0`、`127.0.0.1:8787` LISTENING、`/healthz` 返回 `active=openrouter, providers=4`。
+
+- **`stop` / `restart` 之前停不掉服务**（顺带修正的语义缺陷）：
+  VBS 用的是 `sh.Run ..., 0, False`（**非等待**启动），`wscript` 拉起 node 后立即退出，因此任务本身永远处于"运行完"状态，
+  `Stop-ScheduledTask` 对 node 进程毫无作用——只有 `uninstall` 分支里顺带 `Stop-Process` 才真停得掉。
+  **改法**：新增 `Get-GatewayProcess`（按命令行匹配 `server.js` 定位进程）与 `Stop-Gateway`（杀进程后轮询等端口释放）；
+  `stop`/`restart`/`install` 统一走它，`install` 时先清残留实例再启动，避免端口占用导致新实例启动失败。
+
+- **自启健壮性增强**：
+  - 端口改为从 `data/config.json` 读取（缺失回落 8787），改端口后自启/健康检查自动跟随，不再硬编码。
+  - 登录触发器加 `PT8S` 延迟，等服务目录就绪再拉起，避免与桌面/同步工具抢 IO。
+  - 启动检查由「固定 `Start-Sleep 2` + 单次探测」改为 `Wait-Gateway` 轮询（最长 15s），消除启动稍慢即误报失败。
+  - `start` 先探测已运行则跳过，避免重复拉起；`status` 额外输出进程 PID 与触发器延迟。
+  - **异步验证**：`install → status → restart → stop → start` 全链路各跑一遍，PID 变更且 `/healthz` 每步可达。
+
 ### v1.11.0 · 闪电测活"无内容"修复 + 全局面板布局重构（前端为主，含一处服务端契约修正）
+
 
 - **闪电测活（单模型 ⚡）点击后界面无任何结果**：新增 provider-model 保存后点 ⚡ 不显示测活结果，但底部"测活全部模型"正常。
   **根因**：`lib/tester.js` 的 `testModel()` 成功分支把结果 `model` 字段写成**上游回显的模型名**（`realModel || upstream`），

@@ -190,17 +190,22 @@ export ANTHROPIC_MODEL=你的模型名
 ## 开机自启（Windows）
 
 ```powershell
-# 安装：注册登录时自启的计划任务，并立即启动
+# 安装/重装：注册登录时自启的计划任务，并立即启动（目录迁移后也必须重跑一次）
 powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action install
 
 # 常用操作
-powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action status    # 查看状态
+powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action status    # 任务状态 + 进程 PID + 健康检查
+powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action start     # 启动（已在运行则跳过）
+powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action stop      # 停止（结束 node 进程并释放端口）
 powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action restart   # 重启
 powershell -ExecutionPolicy Bypass -File autostart.ps1 -Action uninstall # 卸载（移除任务并结束进程）
 ```
 
-任务名 `LlmGateway`，登录后通过 `start-hidden.vbs` 无窗口拉起；带「失败后 1 分钟重试 3 次」
-和「不因电池模式停止」设置。
+任务名 `LlmGateway`，登录后延迟 8s 通过 `start-hidden.vbs` 无窗口拉起；带「失败后 1 分钟重试 3 次」
+和「不因电池模式停止」设置。端口取自 `data/config.json` 的 `port`（缺失时 8787）。
+
+> `start-hidden.vbs` 由 `install` 按脚本所在目录生成，内含**绝对路径**且已被 gitignore。
+> 项目目录一挪，任务就会以 `0x8007000B` 失败——在新目录重跑一次 `install` 即可修复。
 
 ## 管理 API
 
